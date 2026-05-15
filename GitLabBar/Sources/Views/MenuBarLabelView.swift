@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// What the menu bar shows. Either a calm green dot or an animated orange
 /// indicator with a short abbreviation of the most recently active project.
@@ -9,34 +10,44 @@ enum MenuBarState: Equatable {
 
 /// The compact view rendered inside the system menu bar slot.
 ///
-/// We deliberately avoid `Image(systemName:)` here because macOS treats menu
-/// bar images as template artwork and strips colour — `.foregroundStyle(.green)`
-/// gets ignored and the symbol appears white. Drawing the circle with a
-/// SwiftUI `Circle` shape sidesteps the template path entirely, so the green /
-/// orange tint is honoured.
+/// macOS forces every menu-bar image through a template path that strips
+/// colour to white/black. SwiftUI `Image(systemName:)` and even SwiftUI
+/// `Circle().stroke(.green, …)` get caught by this. The only reliable way to
+/// show actual colour is to draw the glyph into an `NSImage`, mark it
+/// `isTemplate = false`, and feed that into `Image(nsImage:)`.
 ///
 /// States:
-/// - **idle** — a dashed green circle, no animation.
-/// - **running** — the same dashed circle rendered in orange and continuously
-///   rotating, followed by a 3-character uppercase abbreviation of the
-///   most-recently-running project (plus a `·N` counter when several projects
-///   are busy at once).
+/// - **idle** — a green dotted circle, no animation.
+/// - **running** — the same dotted circle in orange, continuously rotating,
+///   followed by a 3-character uppercase abbreviation of the most-recently
+///   running project (plus `·N` when several projects are busy at once).
 struct MenuBarLabelView: View {
     let state: MenuBarState
+
+    @State private var rotation: Double = 0
 
     var body: some View {
         switch state {
         case .idle:
-            DottedCircleIndicator(color: .green, animated: false)
+            Image(nsImage: Self.idleCircle)
 
         case .running(let abbreviation, let count):
             HStack(spacing: 3) {
-                DottedCircleIndicator(color: .orange, animated: true)
+                Image(nsImage: Self.runningCircle)
+                    .rotationEffect(.degrees(rotation))
+                    .onAppear { startRotating() }
                 Text(count > 1 ? "\(abbreviation)·\(count)" : abbreviation)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.orange)
                     .monospacedDigit()
             }
+        }
+    }
+
+    private func startRotating() {
+        // Restart from zero so consecutive activations spin smoothly.
+        rotation = 0
+        withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
+            rotation = 360
         }
     }
 
@@ -53,58 +64,29 @@ struct MenuBarLabelView: View {
         let head = String(cleaned.prefix(3))
         return head.isEmpty ? "···" : head.uppercased()
     }
-}
 
-/// A dashed circle drawn with `Circle` + `StrokeStyle.dash`, so its colour
-/// survives the menu bar's template-image treatment. When `animated`, the
-/// shape rotates indefinitely to communicate "work in progress".
-private struct DottedCircleIndicator: View {
-    let color: Color
-    let animated: Bool
+    // MARK: - Pre-rendered NSImages
 
-    @State private var rotation: Double = 0
+    private static let idleCircle: NSImage    = makeDottedCircle(color: .systemGreen)
+    private static let runningCircle: NSImage = makeDottedCircle(color: .systemOrange)
 
-    var body: some View {
-        Circle()
-            .stroke(
-                color,
-                style: StrokeStyle(
-                    lineWidth: 1.6,
-                    lineCap: .round,
-                    dash: [0.1, 2.6]
-                )
-            )
-            .frame(width: 13, height: 13)
-            .rotationEffect(.degrees(rotation))
-            .onAppear { applyAnimation(animated) }
-            .modifier(AnimatedChangeModifier(value: animated, apply: applyAnimation))
-    }
-
-    private func applyAnimation(_ on: Bool) {
-        if on {
-            // Reset to a deterministic starting angle so subsequent transitions
-            // don't accumulate weird offsets across state changes.
-            rotation = 0
-            withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
-                rotation = 360
-            }
-        } else {
-            withAnimation(.default) { rotation = 0 }
-        }
-    }
-}
-
-/// Tiny shim that uses the two-argument `onChange` on macOS 14+ and the
-/// older single-argument form on macOS 13. Keeps the parent view ergonomic.
-private struct AnimatedChangeModifier: ViewModifier {
-    let value: Bool
-    let apply: (Bool) -> Void
-
-    func body(content: Content) -> some View {
-        if #available(macOS 14, *) {
-            content.onChange(of: value) { _, newValue in apply(newValue) }
-        } else {
-            content.onChange(of: value) { newValue in apply(newValue) }
-        }
+    /// Draws a dashed circle into an `NSImage` and disables template treatment
+    /// so the system keeps the colour we asked for.
+    private static func makeDottedCircle(color: NSColor) -> NSImage {
+        let side: CGFloat = 14
+        let image = NSImage(size: NSSize(width: side, height: side))
+        image.lockFocus()
+        let inset: CGFloat = 1.5
+        let rect = NSRect(x: inset, y: inset, width: side - inset * 2, height: side - inset * 2)
+        let path = NSBezierPath(ovalIn: rect)
+        path.lineWidth = 1.7
+        path.lineCapStyle = .round
+        let dash: [CGFloat] = [0.5, 2.6]
+        path.setLineDash(dash, count: dash.count, phase: 0)
+        color.setStroke()
+        path.stroke()
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 }

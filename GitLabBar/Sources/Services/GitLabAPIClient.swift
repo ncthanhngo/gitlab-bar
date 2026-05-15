@@ -103,7 +103,37 @@ struct GitLabAPIClient: GitLabAPI {
 
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
+        // GitLab serialises timestamps with fractional seconds, e.g.
+        // `2026-05-15T06:10:18.123Z`. The stock `.iso8601` strategy refuses
+        // those, so decoding fails silently and the menu bar never receives
+        // pipeline updates. Try the fractional variant first, fall back to the
+        // plain ISO8601 form for older GitLab versions.
+        d.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+            if let date = iso8601WithFractionalSeconds.date(from: raw) {
+                return date
+            }
+            if let date = iso8601.date(from: raw) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unrecognised ISO8601 timestamp: \(raw)"
+            )
+        }
         return d
     }()
 }
+
+private let iso8601WithFractionalSeconds: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+
+private let iso8601: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()

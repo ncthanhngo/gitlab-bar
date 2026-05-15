@@ -9,8 +9,17 @@ struct GitLabBarApp: App {
     init() {
         let s = AppSettings.shared
         let h = PipelineHistoryStore()
+        let m = PipelineMonitor(settings: s, history: h)
         _history = StateObject(wrappedValue: h)
-        _monitor = StateObject(wrappedValue: PipelineMonitor(settings: s, history: h))
+        _monitor = StateObject(wrappedValue: m)
+        // Start polling at app launch so the menu bar icon turns orange as soon
+        // as GitLab reports a running pipeline — without needing the user to
+        // open the popover first. The hop onto MainActor matches the actor
+        // isolation declared on PipelineMonitor.
+        Task { @MainActor in
+            m.start()
+            await NotificationService.shared.requestAuthorization()
+        }
     }
 
     var body: some Scene {
@@ -19,10 +28,6 @@ struct GitLabBarApp: App {
                 .environmentObject(settings)
                 .environmentObject(monitor)
                 .frame(width: 380)
-                .onAppear {
-                    monitor.start()
-                    Task { await NotificationService.shared.requestAuthorization() }
-                }
         } label: {
             MenuBarLabelView(state: menuBarState)
         }
@@ -44,28 +49,26 @@ struct GitLabBarApp: App {
         .defaultSize(width: 640, height: 480)
     }
 
-    /// Compute the compact menu bar state from the latest pipeline of each project.
-    /// `idle` means no running pipelines (regardless of last-known success/failure);
-    /// `running` carries an abbreviation of the most recently active project plus
-    /// the total number of projects with a running pipeline.
+    /// Compute the compact menu bar state.
+    ///
+    /// `running` fires when **any** pipeline returned by GitLab is in an active
+    /// state — not just the latest pipeline per project. That way the icon
+    /// turns orange even when an older branch's pipeline is still grinding
+    /// while a newer commit on `main` already finished.
+    /// The abbreviation comes from the project whose newest active pipeline
+    /// was updated most recently; the count is the number of distinct
+    /// projects with at least one active pipeline.
     private var menuBarState: MenuBarState {
-        var latestByProject: [String: PipelineEntry] = [:]
-        for entry in monitor.entries {
-            let existing = latestByProject[entry.project.id]
-            if existing == nil ||
-                (entry.pipeline.updatedAt ?? .distantPast) >
-                (existing!.pipeline.updatedAt ?? .distantPast) {
-                latestByProject[entry.project.id] = entry
-            }
-        }
-        let running = latestByProject.values.filter { $0.pipeline.status.isActive }
-        guard !running.isEmpty else { return .idle }
-        let newest = running.max {
+        let activeEntries = monitor.entries.filter { $0.pipeline.status.isActive }
+        guard !activeEntries.isEmpty else { return .idle }
+        // Pick the freshest active entry; that drives the abbreviation.
+        let newest = activeEntries.max {
             ($0.pipeline.updatedAt ?? .distantPast) < ($1.pipeline.updatedAt ?? .distantPast)
         }!
+        let busyProjectCount = Set(activeEntries.map(\.project.id)).count
         return .running(
             abbreviation: MenuBarLabelView.abbreviate(newest.project.displayName),
-            count: running.count
+            count: busyProjectCount
         )
     }
 }
