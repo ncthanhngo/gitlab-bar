@@ -20,7 +20,7 @@ struct MenuBarContentView: View {
     // MARK: - Sections
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 8) {
             Image(systemName: monitor.overall.sfSymbol)
                 .foregroundStyle(headerTint)
             Text(headerTitle).font(.headline)
@@ -33,6 +33,14 @@ struct MenuBarContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Refresh now")
+            Button {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: AppConstants.WindowID.settings)
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.borderless)
+            .help("Settings")
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
@@ -61,13 +69,27 @@ struct MenuBarContentView: View {
 
     private var pipelineList: some View {
         let grouped = Dictionary(grouping: monitor.entries, by: { $0.project.id })
-        let projectIDs = settings.projects.map { $0.id }
+        // Pre-compute summaries and sort projects: running first, then failed, then green/idle.
+        let projects: [ProjectSection] = settings.projects.compactMap { config in
+            guard let entries = grouped[config.id], !entries.isEmpty else { return nil }
+            let summary = ProjectSummary.from(entries: entries)
+            return ProjectSection(
+                id: config.id,
+                name: entries[0].project.displayName,
+                entries: entries,
+                summary: summary
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.summary.priority != rhs.summary.priority {
+                return lhs.summary.priority < rhs.summary.priority
+            }
+            return lhs.name.lowercased() < rhs.name.lowercased()
+        }
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(projectIDs, id: \.self) { pid in
-                    if let entries = grouped[pid], !entries.isEmpty {
-                        projectSection(name: entries[0].project.displayName, entries: entries)
-                    }
+                ForEach(projects) { section in
+                    projectSectionView(section)
                 }
             }
             .padding(.horizontal, 8)
@@ -76,13 +98,33 @@ struct MenuBarContentView: View {
         .frame(maxHeight: 420)
     }
 
-    private func projectSection(name: String, entries: [PipelineEntry]) -> some View {
+    private func projectSectionView(_ section: ProjectSection) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(name)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.leading, 6)
-            ForEach(entries.prefix(5)) { entry in
+            HStack(spacing: 6) {
+                Image(systemName: section.summary.icon)
+                    .foregroundStyle(section.summary.tint)
+                    .imageScale(.small)
+                    .frame(width: 12)
+                Text(section.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                if let label = section.summary.countLabel {
+                    Text(label)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(section.summary.tint)
+                        .monospacedDigit()
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(section.summary.tint.opacity(section.summary.priority == 0 ? 0.12 : 0.0))
+            )
+            ForEach(section.entries.prefix(5)) { entry in
                 PipelineRowView(entry: entry)
             }
         }
@@ -91,31 +133,46 @@ struct MenuBarContentView: View {
     @Environment(\.openWindow) private var openWindow
 
     private var footer: some View {
-        HStack {
-            if let err = monitor.lastError {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                Text(err).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-            } else if let when = monitor.lastRefresh {
-                Text("Updated \(when, style: .relative) ago").font(.caption2).foregroundStyle(.secondary)
-            } else {
-                Text(" ").font(.caption2)
-            }
+        HStack(spacing: 10) {
+            statusLine
             Spacer()
-            Button("History…") {
+            Button {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: AppConstants.WindowID.history)
+            } label: {
+                Label("History", systemImage: "clock.arrow.circlepath")
+                    .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.borderless)
             .font(.caption)
-            Button("Settings…") { openSettings() }
-                .buttonStyle(.borderless)
-                .font(.caption)
-            Button("Quit") { NSApp.terminate(nil) }
-                .buttonStyle(.borderless)
-                .font(.caption)
+
+            Divider().frame(height: 12)
+
+            Button(role: .destructive) {
+                NSApp.terminate(nil)
+            } label: {
+                Label("Quit", systemImage: "power")
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
+    }
+
+    @ViewBuilder
+    private var statusLine: some View {
+        if let err = monitor.lastError {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(err).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            .font(.caption2)
+        } else if let when = monitor.lastRefresh {
+            Text("Updated \(when, style: .relative) ago")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Helpers
@@ -149,13 +206,4 @@ struct MenuBarContentView: View {
         .padding(24)
     }
 
-    private func openSettings() {
-        // macOS 14+ exposes SettingsLink, but for max compatibility we use the AppKit selector.
-        NSApp.activate(ignoringOtherApps: true)
-        if #available(macOS 14, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
-    }
 }

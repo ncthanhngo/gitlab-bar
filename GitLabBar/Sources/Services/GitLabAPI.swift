@@ -6,6 +6,8 @@ import Foundation
 protocol GitLabAPI: Sendable {
     func recentPipelines(projectID: String, perPage: Int) async throws -> [Pipeline]
     func projectInfo(projectID: String) async throws -> GitLabProjectInfo
+    /// Projects the authenticated user is a member of, sorted by latest activity.
+    func userProjects(perPage: Int) async throws -> [GitLabProjectInfo]
 }
 
 /// Errors surfaced by any `GitLabAPI` implementation.

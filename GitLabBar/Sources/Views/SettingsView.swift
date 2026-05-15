@@ -76,44 +76,195 @@ struct SettingsView: View {
 
     // MARK: - Projects tab
 
+    @State private var availableProjects: [GitLabProjectInfo] = []
+    @State private var isLoadingProjects = false
+    @State private var projectsError: String?
+    @State private var browseSearch: String = ""
+
     private var projectsTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Project ID or path `group/sub/name`. Prefer numeric IDs when possible.")
-                .font(.caption).foregroundStyle(.secondary)
-
-            HStack {
-                TextField("123 or group/subgroup/repo", text: $newProjectID)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Display name (optional)", text: $newProjectName)
-                    .textFieldStyle(.roundedBorder)
-                Button("Add") { addProject() }
-                    .disabled(newProjectID.trimmingCharacters(in: .whitespaces).isEmpty)
+        VStack(alignment: .leading, spacing: 10) {
+            browseHeader
+            browseList
+            if !manualOnlyEntries.isEmpty {
+                Divider().padding(.vertical, 2)
+                manualEntriesSection
             }
+            Divider().padding(.vertical, 2)
+            manualAddRow
+        }
+        .task { await loadProjectsIfNeeded() }
+    }
 
-            List {
-                ForEach(settings.projects) { project in
-                    HStack {
-                        Image(systemName: "folder").foregroundStyle(.secondary)
-                        VStack(alignment: .leading) {
-                            Text(project.displayName).font(.system(size: 13))
-                            if project.displayName != project.id {
-                                Text(project.id).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        Button {
-                            if let idx = settings.projects.firstIndex(of: project) {
-                                settings.removeProject(at: IndexSet(integer: idx))
-                                Task { await monitor.refresh() }
-                            }
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .buttonStyle(.borderless)
+    // MARK: Browse section
+
+    private var browseHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("My GitLab projects").font(.headline)
+                if !availableProjects.isEmpty {
+                    Text("(\(availableProjects.count))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    Task { await loadProjects() }
+                } label: {
+                    if isLoadingProjects {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
                     }
                 }
+                .buttonStyle(.borderless)
+                .disabled(isLoadingProjects || settings.makeClient() == nil)
+                .help("Reload list from GitLab")
             }
-            .frame(minHeight: 200)
+            if settings.makeClient() == nil {
+                Text("Enter the GitLab URL and token in the Connection tab first.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                TextField("Filter by name or path", text: $browseSearch)
+                    .textFieldStyle(.roundedBorder)
+                if let projectsError {
+                    Text(projectsError).font(.caption).foregroundStyle(.red)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var browseList: some View {
+        if settings.makeClient() == nil {
+            placeholder("Not configured")
+        } else if availableProjects.isEmpty && !isLoadingProjects {
+            placeholder("No projects loaded yet — click the refresh icon.")
+        } else {
+            List {
+                ForEach(filteredAvailableProjects, id: \.id) { info in
+                    browseRow(info)
+                }
+            }
+            .frame(minHeight: 160)
+        }
+    }
+
+    private func browseRow(_ info: GitLabProjectInfo) -> some View {
+        let watching = isWatching(info)
+        return HStack(spacing: 8) {
+            Button {
+                toggleWatch(info)
+            } label: {
+                Image(systemName: watching ? "star.fill" : "star")
+                    .foregroundStyle(watching ? .yellow : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .help(watching ? "Stop watching" : "Watch this project")
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(info.pathWithNamespace).font(.system(size: 12))
+                Text("#\(info.id)").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { toggleWatch(info) }
+    }
+
+    private func placeholder(_ text: String) -> some View {
+        Text(text)
+            .font(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+    }
+
+    // MARK: Manual entries that aren't covered by the browse list
+
+    private var manualOnlyEntries: [ProjectConfig] {
+        let browseIDs = Set(availableProjects.map { "\($0.id)" })
+        return settings.projects.filter { !browseIDs.contains($0.id) }
+    }
+
+    private var manualEntriesSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Manually added").font(.subheadline)
+            ForEach(manualOnlyEntries) { project in
+                HStack {
+                    Image(systemName: "folder").foregroundStyle(.secondary)
+                    VStack(alignment: .leading) {
+                        Text(project.displayName).font(.system(size: 12))
+                        if project.displayName != project.id {
+                            Text(project.id).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Button {
+                        if let idx = settings.projects.firstIndex(of: project) {
+                            settings.removeProject(at: IndexSet(integer: idx))
+                            Task { await monitor.refresh() }
+                        }
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+        }
+    }
+
+    // MARK: Manual add
+
+    private var manualAddRow: some View {
+        HStack {
+            Text("Add manually:").font(.caption).foregroundStyle(.secondary)
+            TextField("ID or group/subgroup/repo", text: $newProjectID)
+                .textFieldStyle(.roundedBorder)
+            Button("Add") { addProject() }
+                .disabled(newProjectID.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+    }
+
+    // MARK: Actions
+
+    private func loadProjectsIfNeeded() async {
+        guard availableProjects.isEmpty, settings.makeClient() != nil else { return }
+        await loadProjects()
+    }
+
+    private func loadProjects() async {
+        guard let client = settings.makeClient() else {
+            projectsError = "Not configured."
+            return
+        }
+        isLoadingProjects = true
+        projectsError = nil
+        defer { isLoadingProjects = false }
+        do {
+            availableProjects = try await client.userProjects(perPage: 100)
+        } catch {
+            projectsError = "Load failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func toggleWatch(_ info: GitLabProjectInfo) {
+        let id = "\(info.id)"
+        if let idx = settings.projects.firstIndex(where: { $0.id == id }) {
+            settings.removeProject(at: IndexSet(integer: idx))
+        } else {
+            settings.addProject(ProjectConfig(id: id, displayName: info.pathWithNamespace))
+        }
+        Task { await monitor.refresh() }
+    }
+
+    private func isWatching(_ info: GitLabProjectInfo) -> Bool {
+        settings.projects.contains { $0.id == "\(info.id)" }
+    }
+
+    private var filteredAvailableProjects: [GitLabProjectInfo] {
+        let q = browseSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return availableProjects }
+        return availableProjects.filter {
+            $0.name.lowercased().contains(q) ||
+            $0.pathWithNamespace.lowercased().contains(q)
         }
     }
 

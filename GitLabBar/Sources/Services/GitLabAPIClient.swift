@@ -36,6 +36,18 @@ struct GitLabAPIClient: GitLabAPI {
         return try await get(url: url)
     }
 
+    func userProjects(perPage: Int = 100) async throws -> [GitLabProjectInfo] {
+        let url = try makeURL(path: AppConstants.API.projectsListPath, query: [
+            URLQueryItem(name: "membership", value: "true"),
+            URLQueryItem(name: "simple", value: "true"),
+            URLQueryItem(name: "archived", value: "false"),
+            URLQueryItem(name: "per_page", value: "\(perPage)"),
+            URLQueryItem(name: "order_by", value: "last_activity_at"),
+            URLQueryItem(name: "sort", value: "desc"),
+        ])
+        return try await get(url: url)
+    }
+
     // MARK: - Internals
 
     private func get<T: Decodable>(url: URL) async throws -> T {

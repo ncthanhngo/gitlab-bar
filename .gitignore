@@ -6,6 +6,7 @@ GitLabBar/GitLabBar.xcodeproj/
 GitLabBar/Resources/Info.plist
 GitLabBar/Resources/GitLabBar.entitlements
 .build/
+.out/
 DerivedData/
 *.xcuserstate
 *.xcuserdatad/

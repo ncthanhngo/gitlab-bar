@@ -44,7 +44,8 @@ enum AppConstants {
     // MARK: - Window IDs
 
     enum WindowID {
-        static let history = "history"
+        static let history  = "history"
+        static let settings = "settings"
     }
 
     // MARK: - Notification user-info keys
@@ -56,8 +57,9 @@ enum AppConstants {
     // MARK: - GitLab API
 
     enum API {
-        static let pipelinesPath = "/api/v4/projects/%@/pipelines"
-        static let projectPath   = "/api/v4/projects/%@"
-        static let tokenHeader   = "PRIVATE-TOKEN"
+        static let pipelinesPath    = "/api/v4/projects/%@/pipelines"
+        static let projectPath      = "/api/v4/projects/%@"
+        static let projectsListPath = "/api/v4/projects"
+        static let tokenHeader      = "PRIVATE-TOKEN"
     }
 }
