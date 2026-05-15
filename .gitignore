@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Xcode build artefacts (project is regenerated via xcodegen)
+GitLabBar/GitLabBar.xcodeproj/
+GitLabBar/Resources/Info.plist
+GitLabBar/Resources/GitLabBar.entitlements
+.build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# IDE
+.idea/
+.vscode/
+
+# Local plans and scratch notes
+plans/
+docs/
