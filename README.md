@@ -13,11 +13,15 @@ you watch:
 | `✕` red              | At least one project's most recent pipeline failed             |
 | `◌` grey             | Not configured yet, or no data fetched                         |
 
-Click the icon to open a popover with the latest pipelines per project. Click a
-row to open the pipeline page in your browser.
+Click the icon to open a popover with the latest pipelines per project. Each
+row shows the branch, status, short commit SHA, trigger source and duration.
+**Click a row to copy its commit SHA** to the clipboard; hover the row and
+click the arrow icon to open the pipeline page in your browser.
 
 - Works against self-hosted GitLab and gitlab.com
 - Tracks multiple projects in parallel
+- Pipeline rows show commit SHA, trigger source, run duration, and relative time
+- Click a row to copy the commit SHA; arrow button opens it in your browser
 - Personal Access Token stored in the **macOS Keychain**, never in plist
 - Optional banner notifications when a pipeline transitions to failed / success
 - Dedicated **History** window with search and persistent pipeline records
