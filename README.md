@@ -23,6 +23,8 @@ click the arrow icon to open the pipeline page in your browser.
 - Pipeline rows show commit SHA, trigger source, run duration, and relative time
 - Click a row to copy the commit SHA; arrow button opens it in your browser
 - Personal Access Token stored in the **macOS Keychain**, never in plist
+- **Snippets** popover (key icon in the header) — paste any string once (PATs,
+  project IDs, commands…), click to copy later, with reveal/hide per entry
 - Optional banner notifications when a pipeline transitions to failed / success
 - Dedicated **History** window with search and persistent pipeline records
 - Optional **Launch at Login** toggle (via `SMAppService`)
@@ -100,7 +102,15 @@ First-time setup:
    **Launch at Login** if you want GitLabBar to start with macOS.
 5. Close Settings. The icon updates within one refresh cycle.
 
-Click **History…** in the popover footer to open the dedicated history window.
+The key icon next to **Settings** opens the **Snippets** popover — a small
+clipboard store for any string you want to grab quickly (a second PAT, a
+project ID, a kubectl command, etc.). Paste a value, optionally name it,
+hit Save; afterwards a single click on the row copies the value to your
+clipboard. Toggle the eye icon to reveal the masked value, trash to delete.
+Snippets live in `UserDefaults` (not the Keychain) because they are meant
+to be exposed for clipboard access — don't store true secrets there.
+
+Click **History** in the popover footer to open the dedicated history window.
 It lists every pipeline GitLabBar has fetched (capped at 500 records),
 searchable by branch / status / project, and persisted at
 `~/Library/Application Support/GitLabBar/pipeline-history.json`.
@@ -147,12 +157,13 @@ GitLabBar/
 │   └── GitLabBar.entitlements          # generated
 └── Sources/
     ├── App/                            # @main entry, MenuBarExtra + Settings + History scenes
-    ├── Models/                         # Pipeline, ProjectConfig, PipelineStatus, PipelineHistoryRecord
+    ├── Models/                         # Pipeline, ProjectConfig, PipelineStatus, PipelineHistoryRecord, SavedSnippet
     ├── Services/                       # GitLabAPI(+Client), KeychainHelper, PipelineMonitor,
     │                                   # NotificationService, PipelineHistoryStore, LaunchAtLoginService
     ├── Stores/                         # AppSettings (ObservableObject)
     ├── Support/                        # AppConstants, AppLogger
-    └── Views/                          # MenuBarContentView, PipelineRowView, SettingsView, HistoryView
+    └── Views/                          # MenuBarContentView, PipelineRowView, SettingsView,
+                                        # HistoryView, SnippetsMenuView
 Formula/
 └── gitlab-bar.rb                       # Homebrew formula
 ```
@@ -185,12 +196,14 @@ Design rules:
 
 ## Releasing (maintainers)
 
-1. Bump `MARKETING_VERSION` in `GitLabBar/project.yml`.
+1. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in
+   `GitLabBar/project.yml`, commit, push `main`.
 2. Tag and push: `git tag v0.x.y && git push origin v0.x.y`.
-3. Update `url` and `sha256` in `Formula/gitlab-bar.rb` with the tarball from
-   the new tag. The SHA can be computed via
-   `curl -sL <tarball-url> | shasum -a 256`.
-4. Commit the formula bump on `main`.
+3. The `.github/workflows/update-formula.yml` GitHub Action picks up the tag,
+   downloads the source tarball, computes its `sha256`, rewrites
+   `Formula/gitlab-bar.rb`, and commits the bump back to `main` as
+   `chore(formula): release v0.x.y`. After it completes,
+   `brew update && brew upgrade gitlab-bar` delivers the new version.
 
 ---
 
