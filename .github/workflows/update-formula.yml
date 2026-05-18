@@ -1,0 +1,72 @@
+name: Update Homebrew Formula
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  bump-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve tag + tarball sha256
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+
+          echo "Fetching ${URL}"
+          tmp="$(mktemp)"
+          # Retry a couple of times — GitHub takes a moment to publish a fresh tag tarball.
+          for i in 1 2 3 4 5; do
+            if curl -fsSL "${URL}" -o "${tmp}"; then break; fi
+            echo "Retry ${i}..." ; sleep 5
+          done
+
+          SHA256="$(shasum -a 256 "${tmp}" | awk '{print $1}')"
+          rm -f "${tmp}"
+
+          echo "tag=${TAG}"        >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "url=${URL}"        >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA256}"  >> "$GITHUB_OUTPUT"
+
+      - name: Patch Formula/gitlab-bar.rb
+        env:
+          NEW_URL: ${{ steps.meta.outputs.url }}
+          NEW_SHA: ${{ steps.meta.outputs.sha256 }}
+        run: |
+          python3 - <<'PY'
+          import os, re, pathlib
+          path = pathlib.Path("Formula/gitlab-bar.rb")
+          text = path.read_text()
+          text = re.sub(r'(\n\s*url\s+)"[^"]+"',    rf'\1"{os.environ["NEW_URL"]}"', text, count=1)
+          text = re.sub(r'(\n\s*sha256\s+)"[^"]+"', rf'\1"{os.environ["NEW_SHA"]}"', text, count=1)
+          path.write_text(text)
+          print(text)
+          PY
+
+      - name: Commit + push
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if git diff --quiet -- Formula/gitlab-bar.rb; then
+            echo "Formula already up to date for v${VERSION}; nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/gitlab-bar.rb
+          git commit -m "chore(formula): release v${VERSION}"
+          git push origin main
