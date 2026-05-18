@@ -15,6 +15,7 @@ struct MenuBarContentView: View {
             footer
         }
         .padding(.vertical, 8)
+        .onAppear { monitor.acknowledgeFailures() }
     }
 
     // MARK: - Sections

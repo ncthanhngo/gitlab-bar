@@ -28,6 +28,9 @@ final class PipelineMonitor: ObservableObject {
     @Published private(set) var lastRefresh: Date?
     @Published private(set) var lastError: String?
     @Published private(set) var isLoading: Bool = false
+    /// True while there is at least one failed pipeline the user hasn't seen yet.
+    /// Cleared by `acknowledgeFailures()` (invoked when the popover opens).
+    @Published private(set) var hasUnacknowledgedFailure: Bool = false
 
     private let settings: AppSettings
     private let history: PipelineHistoryStore
@@ -36,6 +39,8 @@ final class PipelineMonitor: ObservableObject {
 
     /// Last seen status of each `(projectID, pipelineID)` for transition detection.
     private var previousStatuses: [String: PipelineStatus] = [:]
+    /// Failed pipelines the user has already viewed — never re-flag these.
+    private var acknowledgedFailedKeys: Set<String> = []
 
     init(settings: AppSettings,
          history: PipelineHistoryStore,
@@ -121,6 +126,33 @@ final class PipelineMonitor: ObservableObject {
         self.lastError = firstError
         self.lastRefresh = Date()
         self.overall = Self.aggregate(entries: collected)
+        self.refreshUnacknowledgedFailure(for: collected)
+    }
+
+    /// Mark every currently-failed pipeline as seen. Called when the user opens
+    /// the menu bar popover — that's the signal we have their attention.
+    func acknowledgeFailures() {
+        let currentFailed = Self.failedKeys(in: entries)
+        guard !currentFailed.isEmpty || hasUnacknowledgedFailure else { return }
+        acknowledgedFailedKeys.formUnion(currentFailed)
+        hasUnacknowledgedFailure = false
+    }
+
+    /// Recompute `hasUnacknowledgedFailure` against the latest entries. A failed
+    /// pipeline that's no longer in the list (rerun, GC'd) drops from the
+    /// acknowledged set too, so a future re-failure flags red again.
+    private func refreshUnacknowledgedFailure(for entries: [PipelineEntry]) {
+        let currentFailed = Self.failedKeys(in: entries)
+        acknowledgedFailedKeys.formIntersection(currentFailed)
+        hasUnacknowledgedFailure = !currentFailed.isSubset(of: acknowledgedFailedKeys)
+    }
+
+    private static func failedKeys(in entries: [PipelineEntry]) -> Set<String> {
+        var out: Set<String> = []
+        for entry in entries where entry.pipeline.status == .failed {
+            out.insert("\(entry.project.id)-\(entry.pipeline.id)")
+        }
+        return out
     }
 
     /// Compare current entries against `previousStatuses` and post notifications

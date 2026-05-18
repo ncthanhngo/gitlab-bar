@@ -60,15 +60,26 @@ struct GitLabBarApp: App {
     /// projects with at least one active pipeline.
     private var menuBarState: MenuBarState {
         let activeEntries = monitor.entries.filter { $0.pipeline.status.isActive }
-        guard !activeEntries.isEmpty else { return .idle }
-        // Pick the freshest active entry; that drives the abbreviation.
-        let newest = activeEntries.max {
-            ($0.pipeline.updatedAt ?? .distantPast) < ($1.pipeline.updatedAt ?? .distantPast)
-        }!
-        let busyProjectCount = Set(activeEntries.map(\.project.id)).count
-        return .running(
-            abbreviation: MenuBarLabelView.abbreviate(newest.project.displayName),
-            count: busyProjectCount
-        )
+        if !activeEntries.isEmpty {
+            // Running spinner always wins — user can see progress in real time.
+            let newest = activeEntries.max {
+                ($0.pipeline.updatedAt ?? .distantPast) < ($1.pipeline.updatedAt ?? .distantPast)
+            }!
+            let busyProjectCount = Set(activeEntries.map(\.project.id)).count
+            return .running(
+                abbreviation: MenuBarLabelView.abbreviate(newest.project.displayName),
+                count: busyProjectCount
+            )
+        }
+        if monitor.hasUnacknowledgedFailure {
+            // Count distinct projects with an unseen failed pipeline.
+            let failedProjectCount = Set(
+                monitor.entries
+                    .filter { $0.pipeline.status == .failed }
+                    .map(\.project.id)
+            ).count
+            return .failed(count: failedProjectCount)
+        }
+        return .idle
     }
 }
