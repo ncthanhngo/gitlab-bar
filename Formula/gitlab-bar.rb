@@ -1,8 +1,8 @@
 class GitlabBar < Formula
   desc "macOS menu bar widget showing GitLab CI/CD pipeline status"
   homepage "https://github.com/ncthanhngo/gitlab-bar"
-  url "https://github.com/ncthanhngo/gitlab-bar/archive/refs/tags/v0.3.0.tar.gz"
-  sha256 "dd45a7329553ca2b389990ebdebb2b000d7c9417ea8e9e7b36d74f21be5cdb3e"
+  url "https://github.com/ncthanhngo/gitlab-bar/archive/refs/tags/v0.4.0.tar.gz"
+  sha256 "86adc7ddb1dd2d44a9c490ad238933ba05d4b7dfb967dba299004814f18ee356"
   license "MIT"
   head "https://github.com/ncthanhngo/gitlab-bar.git", branch: "main"
 
