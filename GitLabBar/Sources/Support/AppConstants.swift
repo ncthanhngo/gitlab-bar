@@ -18,6 +18,7 @@ enum AppConstants {
         static let pollIntervalSecs = "pollIntervalSecs"
         static let perPage          = "perPage"
         static let projectsJSON     = "projectsJSON"
+        static let snippetsJSON     = "snippetsJSON"
         static let notifyOnFailed   = "notifyOnFailed"
         static let notifyOnSuccess  = "notifyOnSuccess"
         static let notificationsOn  = "notificationsOn"

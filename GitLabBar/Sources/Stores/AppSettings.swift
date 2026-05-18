@@ -20,6 +20,11 @@ final class AppSettings: ObservableObject {
         didSet { persistProjects() }
     }
 
+    /// User-curated snippets surfaced as click-to-copy rows in the popover header.
+    @Published var snippets: [SavedSnippet] = [] {
+        didSet { persistSnippets() }
+    }
+
     /// Token mirror — UI binds to this, persistence is keychain-backed.
     @Published var token: String = "" {
         didSet {
@@ -35,6 +40,10 @@ final class AppSettings: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: AppConstants.DefaultsKey.projectsJSON),
            let decoded = try? JSONDecoder().decode([ProjectConfig].self, from: data) {
             self.projects = decoded
+        }
+        if let data = UserDefaults.standard.data(forKey: AppConstants.DefaultsKey.snippetsJSON),
+           let decoded = try? JSONDecoder().decode([SavedSnippet].self, from: data) {
+            self.snippets = decoded
         }
         // Load token from keychain without retriggering didSet write.
         if let saved = KeychainHelper.loadToken() {
@@ -65,5 +74,25 @@ final class AppSettings: ObservableObject {
     private func persistProjects() {
         guard let data = try? JSONEncoder().encode(projects) else { return }
         UserDefaults.standard.set(data, forKey: AppConstants.DefaultsKey.projectsJSON)
+    }
+
+    // MARK: - Snippets
+
+    func addSnippet(label: String, value: String) {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else { return }
+        snippets.append(SavedSnippet(
+            label: label.trimmingCharacters(in: .whitespacesAndNewlines),
+            value: trimmedValue
+        ))
+    }
+
+    func removeSnippet(id: UUID) {
+        snippets.removeAll { $0.id == id }
+    }
+
+    private func persistSnippets() {
+        guard let data = try? JSONEncoder().encode(snippets) else { return }
+        UserDefaults.standard.set(data, forKey: AppConstants.DefaultsKey.snippetsJSON)
     }
 }

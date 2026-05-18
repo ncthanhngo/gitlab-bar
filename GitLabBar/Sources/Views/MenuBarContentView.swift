@@ -5,6 +5,7 @@ import AppKit
 struct MenuBarContentView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var monitor: PipelineMonitor
+    @State private var showSnippets = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,12 +29,16 @@ struct MenuBarContentView: View {
             Spacer()
             if monitor.isLoading { ProgressView().controlSize(.small) }
             Button {
-                Task { await monitor.refresh() }
+                showSnippets.toggle()
             } label: {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: "key.fill")
             }
             .buttonStyle(.borderless)
-            .help("Refresh now")
+            .help("Snippets")
+            .popover(isPresented: $showSnippets, arrowEdge: .top) {
+                SnippetsMenuView()
+                    .environmentObject(settings)
+            }
             Button {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: AppConstants.WindowID.settings)
@@ -137,6 +142,19 @@ struct MenuBarContentView: View {
         HStack(spacing: 10) {
             statusLine
             Spacer()
+            Button {
+                Task { await monitor.refresh() }
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+            .disabled(monitor.isLoading)
+            .help("Refresh now")
+
+            Divider().frame(height: 12)
+
             Button {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: AppConstants.WindowID.history)
