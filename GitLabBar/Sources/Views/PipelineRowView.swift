@@ -72,7 +72,7 @@ struct PipelineRowView: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(shortSHA.map { "Click to copy commit: \($0)" } ?? "No commit SHA")
+        .help(entry.pipeline.sha.map { "Click to copy commit SHA: \($0)" } ?? "No commit SHA")
     }
 
     /// Status icon — uses `symbolEffect(.pulse)` when running on macOS 14+.
@@ -107,7 +107,7 @@ struct PipelineRowView: View {
     }
 
     private func copyName() {
-        guard let sha = shortSHA else { return }
+        guard let sha = entry.pipeline.sha, !sha.isEmpty else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(sha, forType: .string)
