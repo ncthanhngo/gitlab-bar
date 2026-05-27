@@ -14,8 +14,111 @@ struct SettingsView: View {
             connectionTab.tabItem { Label("Connection", systemImage: "network") }
             projectsTab.tabItem  { Label("Projects",  systemImage: "folder") }
             generalTab.tabItem   { Label("General",   systemImage: "gear") }
+            aboutTab.tabItem     { Label("About",     systemImage: "info.circle") }
         }
         .padding(16)
+    }
+
+    // MARK: - About / Update tab
+
+    @State private var latestRelease: GitHubRelease?
+    @State private var updateStatus: String?
+    @State private var isCheckingUpdate = false
+    @State private var isInstallingUpdate = false
+    @State private var updateLog: String = ""
+
+    private var currentVersion: String { UpdateService.currentVersion }
+
+    private var hasUpdate: Bool {
+        guard let latest = latestRelease else { return false }
+        return UpdateService.isNewer(latest.version, than: currentVersion)
+    }
+
+    private var aboutTab: some View {
+        Form {
+            Section {
+                LabeledContent("GitLabBar") { Text("v\(currentVersion)").monospacedDigit() }
+                if let latest = latestRelease {
+                    LabeledContent("Latest release") {
+                        HStack(spacing: 6) {
+                            Text("v\(latest.version)").monospacedDigit()
+                            if hasUpdate {
+                                Text("update available")
+                                    .font(.caption).foregroundStyle(.orange)
+                            } else {
+                                Text("up to date").font(.caption).foregroundStyle(.green)
+                            }
+                        }
+                    }
+                }
+                HStack {
+                    Button(isCheckingUpdate ? "Checking…" : "Check for updates") {
+                        Task { await checkForUpdates() }
+                    }
+                    .disabled(isCheckingUpdate || isInstallingUpdate)
+
+                    if hasUpdate {
+                        Button(isInstallingUpdate ? "Installing…" : "Install update") {
+                            Task { await installUpdate() }
+                        }
+                        .disabled(isInstallingUpdate)
+                        .buttonStyle(.borderedProminent)
+                    }
+                    Spacer()
+                }
+                if let msg = updateStatus {
+                    Text(msg).font(.caption).foregroundStyle(.secondary)
+                }
+                if !updateLog.isEmpty {
+                    ScrollView {
+                        Text(updateLog)
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxHeight: 140)
+                }
+            } header: {
+                Text("Version").font(.headline)
+            } footer: {
+                Text("Updates run `brew update && brew upgrade gitlab-bar`. Restart GitLabBar after install to load the new version.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .task { if latestRelease == nil { await checkForUpdates() } }
+    }
+
+    private func checkForUpdates() async {
+        isCheckingUpdate = true
+        updateStatus = nil
+        defer { isCheckingUpdate = false }
+        do {
+            let release = try await UpdateService.fetchLatestRelease()
+            latestRelease = release
+            updateStatus = UpdateService.isNewer(release.version, than: currentVersion)
+                ? "New version v\(release.version) is available."
+                : "You're on the latest version."
+        } catch {
+            updateStatus = error.localizedDescription
+        }
+    }
+
+    private func installUpdate() async {
+        isInstallingUpdate = true
+        updateStatus = "Running brew upgrade…"
+        updateLog = ""
+        defer { isInstallingUpdate = false }
+        do {
+            let output = try await UpdateService.runBrewUpgrade()
+            updateLog = output
+            updateStatus = "Update complete. Quit and relaunch GitLabBar to load v\(latestRelease?.version ?? "new")."
+        } catch let UpdateError.brewFailed(msg) {
+            updateLog = msg
+            updateStatus = "Update failed. See log below."
+        } catch {
+            updateStatus = error.localizedDescription
+        }
     }
 
     // MARK: - Connection tab
