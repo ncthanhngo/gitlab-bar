@@ -32,12 +32,44 @@ enum UpdateError: LocalizedError {
     }
 }
 
+/// Where the running app bundle lives — picks update strategy.
+enum InstallLocation: Sendable {
+    case brew        // /opt/homebrew/Cellar/... or /usr/local/Cellar/...
+    case applications // /Applications/GitLabBar.app
+    case other(URL)
+
+    var label: String {
+        switch self {
+        case .brew: return "Homebrew"
+        case .applications: return "/Applications"
+        case .other: return "Custom location"
+        }
+    }
+}
+
 enum UpdateService {
     static let owner = "ncthanhngo"
     static let repo  = "gitlab-bar"
 
     static var currentVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
+
+    static var installLocation: InstallLocation {
+        let bundle = Bundle.main.bundleURL
+        let path = bundle.path
+        if path.contains("/Cellar/gitlab-bar/") || path.contains("/opt/homebrew/") || path.contains("/usr/local/Cellar/") {
+            return .brew
+        }
+        if path.hasPrefix("/Applications/") {
+            return .applications
+        }
+        return .other(bundle)
+    }
+
+    /// Release page on GitHub — the manual update fallback when brew isn't available.
+    static var releasesURL: URL {
+        URL(string: "https://github.com/\(owner)/\(repo)/releases/latest")!
     }
 
     static func fetchLatestRelease() async throws -> GitHubRelease {

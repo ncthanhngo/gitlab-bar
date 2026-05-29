@@ -5,20 +5,33 @@ struct GitLabBarApp: App {
     @StateObject private var settings = AppSettings.shared
     @StateObject private var history: PipelineHistoryStore
     @StateObject private var monitor: PipelineMonitor
+    @StateObject private var mrMonitor: MRMonitor
+    private let webhook = WebhookReceiver()
 
     init() {
         let s = AppSettings.shared
         let h = PipelineHistoryStore()
         let m = PipelineMonitor(settings: s, history: h)
+        let mr = MRMonitor(settings: s)
         _history = StateObject(wrappedValue: h)
         _monitor = StateObject(wrappedValue: m)
-        // Start polling at app launch so the menu bar icon turns orange as soon
-        // as GitLab reports a running pipeline — without needing the user to
-        // open the popover first. The hop onto MainActor matches the actor
-        // isolation declared on PipelineMonitor.
+        _mrMonitor = StateObject(wrappedValue: mr)
+        let receiver = webhook
         Task { @MainActor in
             m.start()
+            mr.start()
             await NotificationService.shared.requestAuthorization()
+            receiver.onEvent = { [weak m] payload in
+                m?.acceptWebhookEvent(payload)
+            }
+            if s.webhookEnabled {
+                let secret = s.ensureWebhookSecret()
+                do {
+                    try receiver.start(port: UInt16(s.webhookPort), secret: secret)
+                } catch {
+                    AppLogger.api.error("webhook listener failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
         }
     }
 
@@ -27,6 +40,7 @@ struct GitLabBarApp: App {
             MenuBarContentView()
                 .environmentObject(settings)
                 .environmentObject(monitor)
+                .environmentObject(mrMonitor)
                 .frame(width: 380)
         } label: {
             MenuBarLabelView(state: menuBarState)

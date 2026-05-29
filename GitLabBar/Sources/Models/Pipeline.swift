@@ -12,12 +12,13 @@ struct Pipeline: Codable, Sendable, Identifiable, Hashable {
     let webUrl: String
     let createdAt: Date?
     let updatedAt: Date?
+    let user: GitLabUser?
 
     enum CodingKeys: String, CodingKey {
         case id
         case projectId = "project_id"
         case iid
-        case ref, sha, status, source
+        case ref, sha, status, source, user
         case webUrl = "web_url"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

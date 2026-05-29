@@ -7,13 +7,13 @@ enum KeychainHelper {
     private static let service = AppConstants.keychainService
     private static let account = AppConstants.keychainAccount
 
-    static func saveToken(_ token: String) throws {
+    static func saveToken(_ token: String, serverID: UUID? = nil) throws {
         let data = Data(token.utf8)
-        // Update if existing, otherwise add.
+        let acc = accountKey(for: serverID)
         let query: [String: Any] = [
             kSecClass as String:        kSecClassGenericPassword,
             kSecAttrService as String:  service,
-            kSecAttrAccount as String:  account,
+            kSecAttrAccount as String:  acc,
         ]
         let attrs: [String: Any] = [kSecValueData as String: data]
 
@@ -30,27 +30,39 @@ enum KeychainHelper {
         }
     }
 
-    static func loadToken() -> String? {
+    static func loadToken(serverID: UUID? = nil) -> String? {
+        let acc = accountKey(for: serverID)
         let query: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: acc,
             kSecReturnData as String:  true,
             kSecMatchLimit as String:  kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        if status != errSecSuccess {
+            AppLogger.settings.error("keychain load failed: OSStatus \(status, privacy: .public)")
+            return nil
+        }
+        guard let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    static func deleteToken() {
+    static func deleteToken(serverID: UUID? = nil) {
+        let acc = accountKey(for: serverID)
         let query: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: acc,
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    /// Legacy single-server uses `gitlab-pat`; per-server keys use `gitlab-pat:<uuid>`.
+    private static func accountKey(for serverID: UUID?) -> String {
+        if let id = serverID { return "\(account):\(id.uuidString)" }
+        return account
     }
 
     enum KeychainError: LocalizedError {

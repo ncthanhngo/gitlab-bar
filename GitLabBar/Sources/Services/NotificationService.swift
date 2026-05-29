@@ -28,7 +28,20 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// Post a banner. `url` is stored in `userInfo` so the delegate can open it on tap.
+    /// Suppressed entirely when `NotificationGate` says we're in quiet/mute window.
     func send(title: String, body: String, url: String?) {
+        let settings = AppSettings.shared
+        let allowed = NotificationGate.shouldDeliver(.init(
+            now: Date(),
+            quietEnabled: settings.quietHoursEnabled,
+            quietStartMinutes: settings.quietStartMin,
+            quietEndMinutes: settings.quietEndMin,
+            muteUntil: settings.muteUntil
+        ))
+        guard allowed else {
+            AppLogger.ui.debug("notification suppressed by quiet hours / mute")
+            return
+        }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body  = body

@@ -5,9 +5,32 @@ import Foundation
 /// Conform a fake to `GitLabAPI` for tests.
 protocol GitLabAPI: Sendable {
     func recentPipelines(projectID: String, perPage: Int) async throws -> [Pipeline]
+    func recentPipelines(projectID: String, ref: String?, perPage: Int) async throws -> [Pipeline]
     func projectInfo(projectID: String) async throws -> GitLabProjectInfo
     /// Projects the authenticated user is a member of, sorted by latest activity.
     func userProjects(perPage: Int) async throws -> [GitLabProjectInfo]
+    /// Jobs of a given pipeline. Used for the in-popover drill-down.
+    func pipelineJobs(projectID: String, pipelineID: Int) async throws -> [PipelineJob]
+    /// Retry failed jobs of a pipeline.
+    func retryPipeline(projectID: String, pipelineID: Int) async throws
+    /// Cancel running jobs of a pipeline.
+    func cancelPipeline(projectID: String, pipelineID: Int) async throws
+    /// Authenticated user identity.
+    func currentUser() async throws -> GitLabUser
+    /// Merge requests for the authenticated user.
+    func mergeRequests(scope: MRScope) async throws -> [MergeRequest]
+}
+
+extension GitLabAPI {
+    /// Back-compat overload — defaults `ref` to nil.
+    func recentPipelines(projectID: String, perPage: Int) async throws -> [Pipeline] {
+        try await recentPipelines(projectID: projectID, ref: nil, perPage: perPage)
+    }
+}
+
+enum MRScope: String, Sendable {
+    case createdByMe = "created_by_me"
+    case reviewer    = "reviewer"
 }
 
 /// Errors surfaced by any `GitLabAPI` implementation.

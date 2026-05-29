@@ -22,6 +22,14 @@ enum AppConstants {
         static let notifyOnFailed   = "notifyOnFailed"
         static let notifyOnSuccess  = "notifyOnSuccess"
         static let notificationsOn  = "notificationsOn"
+        static let quietEnabled     = "quietHoursEnabled"
+        static let quietStartMin    = "quietHoursStartMin"
+        static let quietEndMin      = "quietHoursEndMin"
+        static let muteUntil        = "muteUntilEpoch"
+        static let webhookEnabled   = "webhookEnabled"
+        static let webhookPort      = "webhookPort"
+        static let webhookSecret    = "webhookSecret"
+        static let serversJSON      = "serversJSON"
     }
 
     // MARK: - Defaults
@@ -59,8 +67,20 @@ enum AppConstants {
 
     enum API {
         static let pipelinesPath    = "/api/v4/projects/%@/pipelines"
+        static let pipelineJobsPath = "/api/v4/projects/%@/pipelines/%d/jobs"
+        static let pipelineRetryPath  = "/api/v4/projects/%@/pipelines/%d/retry"
+        static let pipelineCancelPath = "/api/v4/projects/%@/pipelines/%d/cancel"
         static let projectPath      = "/api/v4/projects/%@"
         static let projectsListPath = "/api/v4/projects"
+        static let userPath         = "/api/v4/user"
+        static let mergeRequestsPath = "/api/v4/merge_requests"
         static let tokenHeader      = "PRIVATE-TOKEN"
+    }
+
+    // MARK: - Webhook receiver
+
+    enum Webhook {
+        static let defaultPort: UInt16 = 8765
+        static let tokenHeader = "X-Gitlab-Token"
     }
 }

@@ -36,6 +36,8 @@ final class PipelineMonitor: ObservableObject {
     private let history: PipelineHistoryStore
     private let notifications: NotificationService
     private var pollTask: Task<Void, Never>?
+    /// Username of authenticated user, cached for `.mine` branch filter.
+    private var cachedUsername: String?
 
     /// Last seen status of each `(projectID, pipelineID)` for transition detection.
     private var previousStatuses: [String: PipelineStatus] = [:]
@@ -69,13 +71,17 @@ final class PipelineMonitor: ObservableObject {
         pollTask = nil
     }
 
+    /// Apply a webhook push event: trigger an immediate refresh so the new
+    /// pipeline state lands in the popover within a poll cycle. We don't
+    /// build a `Pipeline` directly because the payload schema is
+    /// best-effort and we want a single authoritative path.
+    func acceptWebhookEvent(_ payload: PipelineWebhookPayload) {
+        AppLogger.api.debug("webhook event: pipeline \(payload.objectAttributes.id, privacy: .public) status=\(payload.objectAttributes.status, privacy: .public)")
+        Task { await self.refresh() }
+    }
+
     /// Manually trigger a refresh.
     func refresh() async {
-        guard let client = settings.makeClient() else {
-            self.lastError = "Missing configuration (GitLab URL or token)"
-            self.overall = .idle
-            return
-        }
         let projects = settings.projects
         guard !projects.isEmpty else {
             self.entries = []
@@ -83,18 +89,39 @@ final class PipelineMonitor: ObservableObject {
             self.lastError = nil
             return
         }
+        // Group projects by serverID; build a client per group; skip groups with no client.
+        let grouped = Dictionary(grouping: projects, by: { $0.serverID })
+        var workItems: [(ProjectConfig, GitLabAPI)] = []
+        for (serverID, projs) in grouped {
+            guard let client = settings.makeClient(for: serverID) else { continue }
+            for p in projs { workItems.append((p, client)) }
+        }
+        guard !workItems.isEmpty else {
+            self.lastError = "Missing configuration (GitLab URL or token)"
+            self.overall = .idle
+            return
+        }
         self.isLoading = true
         defer { self.isLoading = false }
 
         let perPage = settings.perPage
+        // Lazy-fetch username once so `.mine` filter has data. Uses any client.
+        if cachedUsername == nil, projects.contains(where: { if case .mine = $0.filter { return true } else { return false } }) {
+            cachedUsername = try? await workItems.first?.1.currentUser().username
+        }
+        let username = cachedUsername
         // Fetch all projects in parallel
         var collected: [PipelineEntry] = []
         var firstError: String?
         await withTaskGroup(of: (ProjectConfig, Result<[Pipeline], Error>).self) { group in
-            for project in projects {
+            for (project, client) in workItems {
                 group.addTask {
                     do {
-                        let pipes = try await client.recentPipelines(projectID: project.id, perPage: perPage)
+                        let pipes = try await client.recentPipelines(
+                            projectID: project.id,
+                            ref: project.filter.apiRef,
+                            perPage: perPage
+                        )
                         return (project, .success(pipes))
                     } catch {
                         return (project, .failure(error))
@@ -104,7 +131,8 @@ final class PipelineMonitor: ObservableObject {
             for await (project, result) in group {
                 switch result {
                 case .success(let pipes):
-                    for p in pipes {
+                    let filtered = Self.applyFilter(project.filter, pipes: pipes, username: username)
+                    for p in filtered {
                         collected.append(PipelineEntry(project: project, pipeline: p))
                     }
                 case .failure(let err):
@@ -165,6 +193,24 @@ final class PipelineMonitor: ObservableObject {
             previousStatuses[key] = current
 
             guard let previous, previous.isActive, !current.isActive else { continue }
+
+            // Emit event for external subscribers (Claude Code hook, scripts).
+            // Done independent of notification toggle — file log is cheap.
+            if current == .failed {
+                EventLogService.append(PipelineFailureEvent(
+                    timestamp: Date(),
+                    projectID: entry.project.id,
+                    projectPath: entry.project.displayName,
+                    pipelineID: entry.pipeline.id,
+                    pipelineIID: entry.pipeline.iid,
+                    ref: entry.pipeline.ref,
+                    sha: entry.pipeline.sha,
+                    webURL: entry.pipeline.webUrl,
+                    source: entry.pipeline.source,
+                    status: current.rawValue
+                ))
+            }
+
             guard settings.notificationsEnabled else { continue }
 
             switch current {
@@ -182,6 +228,32 @@ final class PipelineMonitor: ObservableObject {
                 )
             default:
                 break
+            }
+        }
+    }
+
+    /// Client-side branch filter. `.single` is server-applied via `?ref=`.
+    /// Pipeline payload doesn't include `protected` flag, so `.protectedOnly`
+    /// falls back to a name-based heuristic (main/master/develop or release/*).
+    static func applyFilter(_ filter: BranchFilter, pipes: [Pipeline], username: String?) -> [Pipeline] {
+        switch filter {
+        case .all, .single:
+            return pipes
+        case .protectedOnly:
+            return pipes.filter { p in
+                guard let ref = p.ref else { return false }
+                if ref == "main" || ref == "master" || ref == "develop" { return true }
+                return ref.hasPrefix("release/") || ref.hasPrefix("hotfix/")
+            }
+        case .mine:
+            guard let username, !username.isEmpty else { return pipes }
+            return pipes.filter { ($0.user?.username ?? "") == username }
+        case .regex(let pattern):
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return pipes }
+            return pipes.filter { p in
+                guard let ref = p.ref else { return false }
+                let range = NSRange(ref.startIndex..., in: ref)
+                return regex.firstMatch(in: ref, range: range) != nil
             }
         }
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
@@ -38,6 +39,7 @@ struct SettingsView: View {
         Form {
             Section {
                 LabeledContent("GitLabBar") { Text("v\(currentVersion)").monospacedDigit() }
+                LabeledContent("Installed via") { Text(UpdateService.installLocation.label) }
                 if let latest = latestRelease {
                     LabeledContent("Latest release") {
                         HStack(spacing: 6) {
@@ -58,11 +60,19 @@ struct SettingsView: View {
                     .disabled(isCheckingUpdate || isInstallingUpdate)
 
                     if hasUpdate {
-                        Button(isInstallingUpdate ? "Installing…" : "Install update") {
-                            Task { await installUpdate() }
+                        switch UpdateService.installLocation {
+                        case .brew:
+                            Button(isInstallingUpdate ? "Installing…" : "Install update") {
+                                Task { await installUpdate() }
+                            }
+                            .disabled(isInstallingUpdate)
+                            .buttonStyle(.borderedProminent)
+                        default:
+                            Button("Open release page") {
+                                NSWorkspace.shared.open(UpdateService.releasesURL)
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .disabled(isInstallingUpdate)
-                        .buttonStyle(.borderedProminent)
                     }
                     Spacer()
                 }
@@ -81,12 +91,23 @@ struct SettingsView: View {
             } header: {
                 Text("Version").font(.headline)
             } footer: {
-                Text("Updates run `brew update && brew upgrade gitlab-bar`. Restart GitLabBar after install to load the new version.")
+                Text(installFooter)
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .task { if latestRelease == nil { await checkForUpdates() } }
+    }
+
+    private var installFooter: String {
+        switch UpdateService.installLocation {
+        case .brew:
+            return "Updates run `brew update && brew upgrade gitlab-bar`. Restart GitLabBar after install."
+        case .applications:
+            return "Installed in /Applications. Auto-install via Sparkle is planned; meanwhile download the latest DMG from the release page."
+        case .other:
+            return "Running from a custom location. Download the latest from the release page to update."
+        }
     }
 
     private func checkForUpdates() async {
@@ -154,6 +175,10 @@ struct SettingsView: View {
                     Spacer()
                 }
             }
+
+            ServerListSection()
+                .environmentObject(settings)
+                .environmentObject(monitor)
         }
         .formStyle(.grouped)
     }
@@ -251,8 +276,11 @@ struct SettingsView: View {
         }
     }
 
+    @State private var filterEditing: ProjectConfig?
+
     private func browseRow(_ info: GitLabProjectInfo) -> some View {
         let watching = isWatching(info)
+        let cfg = settings.projects.first { $0.id == "\(info.id)" }
         return HStack(spacing: 8) {
             Button {
                 toggleWatch(info)
@@ -265,12 +293,44 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(info.pathWithNamespace).font(.system(size: 12))
-                Text("#\(info.id)").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("#\(info.id)").font(.caption).foregroundStyle(.secondary)
+                    if let cfg, cfg.filter != .all {
+                        Text("·").foregroundStyle(.secondary).font(.caption)
+                        Text(cfg.filter.displayLabel)
+                            .font(.caption).foregroundStyle(Color.accentColor)
+                    }
+                }
             }
             Spacer()
+            if let cfg {
+                Button {
+                    filterEditing = cfg
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+                .buttonStyle(.borderless)
+                .help("Configure branch filter")
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture { toggleWatch(info) }
+        .sheet(item: $filterEditing) { editing in
+            BranchFilterSheet(
+                projectName: editing.displayName,
+                filter: Binding(
+                    get: { editing.filter },
+                    set: { newValue in updateFilter(for: editing, to: newValue) }
+                ),
+                onDone: { filterEditing = nil }
+            )
+        }
+    }
+
+    private func updateFilter(for project: ProjectConfig, to filter: BranchFilter) {
+        guard let idx = settings.projects.firstIndex(where: { $0.id == project.id }) else { return }
+        settings.projects[idx].filter = filter
+        Task { await monitor.refresh() }
     }
 
     private func placeholder(_ text: String) -> some View {
@@ -412,6 +472,12 @@ struct SettingsView: View {
             } header: {
                 Text("Notifications").font(.headline)
             }
+
+            QuietHoursSection()
+                .environmentObject(settings)
+
+            WebhookSetupView()
+                .environmentObject(settings)
 
             Section {
                 Toggle("Launch at login", isOn: $launchAtLoginOn)

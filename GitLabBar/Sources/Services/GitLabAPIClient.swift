@@ -10,22 +10,88 @@ struct GitLabAPIClient: GitLabAPI {
     let token: String
     let session: URLSession
 
-    init(baseURL: URL, token: String, session: URLSession = .shared) {
+    init(baseURL: URL, token: String, session: URLSession? = nil) {
         self.baseURL = baseURL
         self.token = token
-        self.session = session
+        self.session = session ?? Self.makeSession()
+    }
+
+    /// Dedicated session so we don't inherit `URLSession.shared`'s pooled
+    /// connections — which can survive nsurlsessiond hangs across app launches.
+    private static func makeSession() -> URLSession {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest  = AppConstants.Default.requestTimeout
+        cfg.timeoutIntervalForResource = AppConstants.Default.requestTimeout
+        cfg.waitsForConnectivity = false
+        cfg.httpMaximumConnectionsPerHost = 4
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: cfg)
     }
 
     // MARK: - GitLabAPI
 
     func recentPipelines(projectID: String, perPage: Int = AppConstants.Default.perPage) async throws -> [Pipeline] {
+        try await recentPipelines(projectID: projectID, ref: nil, perPage: perPage)
+    }
+
+    func recentPipelines(projectID: String, ref: String?, perPage: Int) async throws -> [Pipeline] {
         let encoded = Self.encode(projectID)
         let path = String(format: AppConstants.API.pipelinesPath, encoded)
-        let url = try makeURL(path: path, query: [
+        var query: [URLQueryItem] = [
             URLQueryItem(name: "per_page", value: "\(perPage)"),
             URLQueryItem(name: "order_by", value: "updated_at"),
             URLQueryItem(name: "sort", value: "desc"),
+        ]
+        if let ref, !ref.isEmpty {
+            query.append(URLQueryItem(name: "ref", value: ref))
+        }
+        let url = try makeURL(path: path, query: query)
+        return try await get(url: url)
+    }
+
+    func pipelineJobs(projectID: String, pipelineID: Int) async throws -> [PipelineJob] {
+        let encoded = Self.encode(projectID)
+        let path = String(format: AppConstants.API.pipelineJobsPath, encoded, pipelineID)
+        let url = try makeURL(path: path, query: [
+            URLQueryItem(name: "per_page", value: "100"),
         ])
+        return try await get(url: url)
+    }
+
+    func retryPipeline(projectID: String, pipelineID: Int) async throws {
+        let encoded = Self.encode(projectID)
+        let path = String(format: AppConstants.API.pipelineRetryPath, encoded, pipelineID)
+        let url = try makeURL(path: path, query: [])
+        try await post(url: url)
+    }
+
+    func cancelPipeline(projectID: String, pipelineID: Int) async throws {
+        let encoded = Self.encode(projectID)
+        let path = String(format: AppConstants.API.pipelineCancelPath, encoded, pipelineID)
+        let url = try makeURL(path: path, query: [])
+        try await post(url: url)
+    }
+
+    func currentUser() async throws -> GitLabUser {
+        let url = try makeURL(path: AppConstants.API.userPath, query: [])
+        return try await get(url: url)
+    }
+
+    func mergeRequests(scope: MRScope) async throws -> [MergeRequest] {
+        var query: [URLQueryItem] = [
+            URLQueryItem(name: "state", value: "opened"),
+            URLQueryItem(name: "per_page", value: "50"),
+            URLQueryItem(name: "order_by", value: "updated_at"),
+            URLQueryItem(name: "sort", value: "desc"),
+            URLQueryItem(name: "with_labels_details", value: "false"),
+        ]
+        switch scope {
+        case .createdByMe:
+            query.append(URLQueryItem(name: "scope", value: "created_by_me"))
+        case .reviewer:
+            query.append(URLQueryItem(name: "reviewer_username", value: "@me"))
+        }
+        let url = try makeURL(path: AppConstants.API.mergeRequestsPath, query: query)
         return try await get(url: url)
     }
 
@@ -49,6 +115,25 @@ struct GitLabAPIClient: GitLabAPI {
     }
 
     // MARK: - Internals
+
+    private func post(url: URL) async throws {
+        var req = URLRequest(url: url,
+                             cachePolicy: .reloadIgnoringLocalCacheData,
+                             timeoutInterval: AppConstants.Default.requestTimeout)
+        req.httpMethod = "POST"
+        req.setValue(token, forHTTPHeaderField: AppConstants.API.tokenHeader)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw GitLabAPIError.transport(error)
+        }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw GitLabAPIError.http(status: http.statusCode, body: body)
+        }
+    }
 
     private func get<T: Decodable>(url: URL) async throws -> T {
         var req = URLRequest(url: url,

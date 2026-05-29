@@ -5,11 +5,20 @@ import AppKit
 struct MenuBarContentView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var monitor: PipelineMonitor
+    @EnvironmentObject private var mrMonitor: MRMonitor
     @State private var showSnippets = false
+    @State private var tab: PopoverTab = .pipelines
+
+    enum PopoverTab: String, CaseIterable, Identifiable {
+        case pipelines = "Pipelines"
+        case mrs = "MRs"
+        var id: String { rawValue }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             header
+            tabSwitcher
             Divider()
             content
             Divider()
@@ -17,6 +26,22 @@ struct MenuBarContentView: View {
         }
         .padding(.vertical, 8)
         .onAppear { monitor.acknowledgeFailures() }
+        // MenuBarExtra(.window) caches the view across opens, so `.onAppear`
+        // only fires the first time. Listen for the popover window becoming
+        // key as a robust "user just opened the popover" signal.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            monitor.acknowledgeFailures()
+        }
+    }
+
+    private var tabSwitcher: some View {
+        Picker("", selection: $tab) {
+            ForEach(PopoverTab.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Sections
@@ -26,6 +51,12 @@ struct MenuBarContentView: View {
             Image(systemName: monitor.overall.sfSymbol)
                 .foregroundStyle(headerTint)
             Text(headerTitle).font(.headline)
+            if settings.muteUntil != nil {
+                Label("Muted", systemImage: "bell.slash.fill")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .labelStyle(.titleAndIcon)
+            }
             Spacer()
             if monitor.isLoading { ProgressView().controlSize(.small) }
             Button {
@@ -54,6 +85,17 @@ struct MenuBarContentView: View {
 
     @ViewBuilder
     private var content: some View {
+        switch tab {
+        case .pipelines: pipelinesContent
+        case .mrs:
+            MRListView()
+                .environmentObject(mrMonitor)
+                .environmentObject(settings)
+        }
+    }
+
+    @ViewBuilder
+    private var pipelinesContent: some View {
         if settings.makeClient() == nil {
             emptyState(
                 icon: "gear",
