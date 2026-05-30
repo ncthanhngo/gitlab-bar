@@ -39,10 +39,19 @@ final class PipelineMonitor: ObservableObject {
     /// Username of authenticated user, cached for `.mine` branch filter.
     private var cachedUsername: String?
 
+    /// Identifies one failed pipeline. Keeping the project ID as a distinct
+    /// field (rather than a `"\(project)-\(pipeline)"` string) lets us prune
+    /// acknowledgements per-project without parsing — project IDs can be
+    /// URL-encoded paths containing dashes, so string-splitting is unsafe.
+    private struct FailureKey: Hashable {
+        let projectID: String
+        let pipelineID: Int
+    }
+
     /// Last seen status of each `(projectID, pipelineID)` for transition detection.
     private var previousStatuses: [String: PipelineStatus] = [:]
     /// Failed pipelines the user has already viewed — never re-flag these.
-    private var acknowledgedFailedKeys: Set<String> = []
+    private var acknowledgedFailedKeys: Set<FailureKey> = []
 
     init(settings: AppSettings,
          history: PipelineHistoryStore,
@@ -113,6 +122,11 @@ final class PipelineMonitor: ObservableObject {
         // Fetch all projects in parallel
         var collected: [PipelineEntry] = []
         var firstError: String?
+        // Projects whose fetch succeeded this cycle. Only these are eligible to
+        // have their acknowledged failures pruned — a project that errored out
+        // (network blip) must keep its "already seen" state so a still-failing
+        // pipeline doesn't re-flag the icon once the project comes back.
+        var refreshedProjectIDs: Set<String> = []
         await withTaskGroup(of: (ProjectConfig, Result<[Pipeline], Error>).self) { group in
             for (project, client) in workItems {
                 group.addTask {
@@ -131,6 +145,7 @@ final class PipelineMonitor: ObservableObject {
             for await (project, result) in group {
                 switch result {
                 case .success(let pipes):
+                    refreshedProjectIDs.insert(project.id)
                     let filtered = Self.applyFilter(project.filter, pipes: pipes, username: username)
                     for p in filtered {
                         collected.append(PipelineEntry(project: project, pipeline: p))
@@ -154,7 +169,7 @@ final class PipelineMonitor: ObservableObject {
         self.lastError = firstError
         self.lastRefresh = Date()
         self.overall = Self.aggregate(entries: collected)
-        self.refreshUnacknowledgedFailure(for: collected)
+        self.refreshUnacknowledgedFailure(for: collected, refreshedProjectIDs: refreshedProjectIDs)
     }
 
     /// Mark every currently-failed pipeline as seen. Called when the user opens
@@ -167,18 +182,25 @@ final class PipelineMonitor: ObservableObject {
     }
 
     /// Recompute `hasUnacknowledgedFailure` against the latest entries. A failed
-    /// pipeline that's no longer in the list (rerun, GC'd) drops from the
-    /// acknowledged set too, so a future re-failure flags red again.
-    private func refreshUnacknowledgedFailure(for entries: [PipelineEntry]) {
+    /// pipeline that's no longer failing in a *successfully refreshed* project
+    /// (rerun, GC'd) drops from the acknowledged set, so a future re-failure
+    /// flags red again. Acknowledged failures belonging to projects that failed
+    /// to refresh this cycle are retained — a transient fetch error must not
+    /// silently un-acknowledge a failure the user already saw.
+    private func refreshUnacknowledgedFailure(for entries: [PipelineEntry],
+                                              refreshedProjectIDs: Set<String>) {
         let currentFailed = Self.failedKeys(in: entries)
-        acknowledgedFailedKeys.formIntersection(currentFailed)
+        acknowledgedFailedKeys = acknowledgedFailedKeys.filter { key in
+            // Keep if the project wasn't refreshed (gap), else only if still failing.
+            !refreshedProjectIDs.contains(key.projectID) || currentFailed.contains(key)
+        }
         hasUnacknowledgedFailure = !currentFailed.isSubset(of: acknowledgedFailedKeys)
     }
 
-    private static func failedKeys(in entries: [PipelineEntry]) -> Set<String> {
-        var out: Set<String> = []
+    private static func failedKeys(in entries: [PipelineEntry]) -> Set<FailureKey> {
+        var out: Set<FailureKey> = []
         for entry in entries where entry.pipeline.status == .failed {
-            out.insert("\(entry.project.id)-\(entry.pipeline.id)")
+            out.insert(FailureKey(projectID: entry.project.id, pipelineID: entry.pipeline.id))
         }
         return out
     }
