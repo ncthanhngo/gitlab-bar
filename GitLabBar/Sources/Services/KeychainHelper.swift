@@ -65,6 +65,43 @@ enum KeychainHelper {
         return account
     }
 
+    // MARK: - Generic secret storage
+
+    /// Store an arbitrary secret string under a custom account in the same
+    /// service. Used for the JSON blob of generated (copyable) tokens.
+    static func saveSecret(_ value: String, account customAccount: String) throws {
+        let data = Data(value.utf8)
+        let query: [String: Any] = [
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: customAccount,
+        ]
+        let status = SecItemUpdate(query as CFDictionary,
+                                   [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var newItem = query
+            newItem[kSecValueData as String] = data
+            let addStatus = SecItemAdd(newItem as CFDictionary, nil)
+            if addStatus != errSecSuccess { throw KeychainError.osStatus(addStatus) }
+        } else if status != errSecSuccess {
+            throw KeychainError.osStatus(status)
+        }
+    }
+
+    static func loadSecret(account customAccount: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: customAccount,
+            kSecReturnData as String:  true,
+            kSecMatchLimit as String:  kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     enum KeychainError: LocalizedError {
         case osStatus(OSStatus)
         var errorDescription: String? {

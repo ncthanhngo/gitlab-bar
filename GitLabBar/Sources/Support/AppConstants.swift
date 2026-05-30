@@ -10,6 +10,8 @@ enum AppConstants {
 
     static let keychainService = "\(bundleID).token"
     static let keychainAccount = "gitlab-pat"
+    /// Account under which the list of generated (copyable) tokens is stored.
+    static let keychainGeneratedTokens = "generated-tokens"
 
     // MARK: - UserDefaults keys
 
@@ -30,6 +32,21 @@ enum AppConstants {
         static let webhookPort      = "webhookPort"
         static let webhookSecret    = "webhookSecret"
         static let serversJSON      = "serversJSON"
+        static let lastTokenGroupID = "lastTokenGroupID"
+        static let lastTokenExpiry  = "lastTokenExpiry"
+    }
+
+    // MARK: - Token generator
+
+    /// Defaults for the on-demand Group Access Token generator (Token tab).
+    enum TokenGenerator {
+        static let scope       = "read_api"
+        /// Reporter — enough for read-only API browsing, least-privilege.
+        static let accessLevel = 20
+        /// How often the janitor checks for tokens to revoke/purge.
+        static let janitorIntervalSecs: TimeInterval = 60
+        /// "Copied" feedback duration on copy buttons.
+        static let copyFeedbackSecs: TimeInterval = 1.5
     }
 
     // MARK: - Defaults
@@ -74,6 +91,9 @@ enum AppConstants {
         static let projectsListPath = "/api/v4/projects"
         static let userPath         = "/api/v4/user"
         static let mergeRequestsPath = "/api/v4/merge_requests"
+        static let groupsPath       = "/api/v4/groups"
+        static let groupAccessTokensPath = "/api/v4/groups/%@/access_tokens"
+        static let groupAccessTokenPath  = "/api/v4/groups/%@/access_tokens/%d"
         static let tokenHeader      = "PRIVATE-TOKEN"
     }
 

@@ -114,7 +114,57 @@ struct GitLabAPIClient: GitLabAPI {
         return try await get(url: url)
     }
 
+    func administrableGroups(perPage: Int = 100) async throws -> [GitLabGroup] {
+        let url = try makeURL(path: AppConstants.API.groupsPath, query: [
+            URLQueryItem(name: "min_access_level", value: "50"), // Owner — required to create group tokens
+            URLQueryItem(name: "per_page", value: "\(perPage)"),
+            URLQueryItem(name: "order_by", value: "name"),
+            URLQueryItem(name: "sort", value: "asc"),
+        ])
+        return try await get(url: url)
+    }
+
+    func createGroupAccessToken(groupID: Int,
+                                name: String,
+                                scope: String,
+                                accessLevel: Int,
+                                expiresAt: Date) async throws -> GeneratedToken {
+        let path = String(format: AppConstants.API.groupAccessTokensPath, "\(groupID)")
+        let url = try makeURL(path: path, query: [])
+        let body: [String: Any] = [
+            "name": name,
+            "scopes": [scope],
+            "access_level": accessLevel,
+            "expires_at": Self.dayFormatter.string(from: expiresAt),
+        ]
+        return try await postReturning(url: url, jsonBody: body)
+    }
+
+    func revokeGroupAccessToken(groupID: Int, tokenID: Int) async throws {
+        let path = String(format: AppConstants.API.groupAccessTokenPath, "\(groupID)", tokenID)
+        let url = try makeURL(path: path, query: [])
+        try await delete(url: url)
+    }
+
     // MARK: - Internals
+
+    private func delete(url: URL) async throws {
+        var req = URLRequest(url: url,
+                             cachePolicy: .reloadIgnoringLocalCacheData,
+                             timeoutInterval: AppConstants.Default.requestTimeout)
+        req.httpMethod = "DELETE"
+        req.setValue(token, forHTTPHeaderField: AppConstants.API.tokenHeader)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw GitLabAPIError.transport(error)
+        }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw GitLabAPIError.http(status: http.statusCode, body: body)
+        }
+    }
 
     private func post(url: URL) async throws {
         var req = URLRequest(url: url,
@@ -132,6 +182,38 @@ struct GitLabAPIClient: GitLabAPI {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             let body = String(data: data, encoding: .utf8) ?? ""
             throw GitLabAPIError.http(status: http.statusCode, body: body)
+        }
+    }
+
+    /// POST that decodes a JSON response (e.g. token creation), unlike `post`
+    /// which is fire-and-forget for actions returning no payload. An optional
+    /// `jsonBody` is serialised and sent as the request body.
+    private func postReturning<T: Decodable>(url: URL, jsonBody: [String: Any]? = nil) async throws -> T {
+        var req = URLRequest(url: url,
+                             cachePolicy: .reloadIgnoringLocalCacheData,
+                             timeoutInterval: AppConstants.Default.requestTimeout)
+        req.httpMethod = "POST"
+        req.setValue(token, forHTTPHeaderField: AppConstants.API.tokenHeader)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let jsonBody {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: jsonBody)
+        }
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw GitLabAPIError.transport(error)
+        }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw GitLabAPIError.http(status: http.statusCode, body: body)
+        }
+        do {
+            return try Self.decoder.decode(T.self, from: data)
+        } catch {
+            throw GitLabAPIError.decoding(error)
         }
     }
 
@@ -208,6 +290,17 @@ struct GitLabAPIClient: GitLabAPI {
             )
         }
         return d
+    }()
+
+    /// GitLab's `expires_at` query param expects a calendar day (`YYYY-MM-DD`)
+    /// in the instance's timezone; the user's current timezone is the closest
+    /// approximation available client-side.
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f
     }()
 }
 

@@ -19,6 +19,19 @@ protocol GitLabAPI: Sendable {
     func currentUser() async throws -> GitLabUser
     /// Merge requests for the authenticated user.
     func mergeRequests(scope: MRScope) async throws -> [MergeRequest]
+    /// Groups the user can administer (member with at least Maintainer access),
+    /// used to pick a target for the Group Access Token generator.
+    func administrableGroups(perPage: Int) async throws -> [GitLabGroup]
+    /// Create a new Group Access Token in `groupID` with the given scope and
+    /// expiry. Requires the calling token to have `api` scope and the user to be
+    /// Owner (or Maintainer, per instance config) of the group.
+    func createGroupAccessToken(groupID: Int,
+                                name: String,
+                                scope: String,
+                                accessLevel: Int,
+                                expiresAt: Date) async throws -> GeneratedToken
+    /// Revoke a previously created Group Access Token.
+    func revokeGroupAccessToken(groupID: Int, tokenID: Int) async throws
 }
 
 extension GitLabAPI {

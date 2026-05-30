@@ -6,6 +6,7 @@ struct GitLabBarApp: App {
     @StateObject private var history: PipelineHistoryStore
     @StateObject private var monitor: PipelineMonitor
     @StateObject private var mrMonitor: MRMonitor
+    @StateObject private var tokenJanitor: GeneratedTokenJanitor
     private let webhook = WebhookReceiver()
 
     init() {
@@ -13,13 +14,16 @@ struct GitLabBarApp: App {
         let h = PipelineHistoryStore()
         let m = PipelineMonitor(settings: s, history: h)
         let mr = MRMonitor(settings: s)
+        let janitor = GeneratedTokenJanitor(settings: s)
         _history = StateObject(wrappedValue: h)
         _monitor = StateObject(wrappedValue: m)
         _mrMonitor = StateObject(wrappedValue: mr)
+        _tokenJanitor = StateObject(wrappedValue: janitor)
         let receiver = webhook
         Task { @MainActor in
             m.start()
             mr.start()
+            janitor.start()
             await NotificationService.shared.requestAuthorization()
             receiver.onEvent = { [weak m] payload in
                 m?.acceptWebhookEvent(payload)

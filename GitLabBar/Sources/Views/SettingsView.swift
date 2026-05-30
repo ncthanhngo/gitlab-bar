@@ -155,7 +155,7 @@ struct SettingsView: View {
                             text: $settings.token,
                             prompt: Text("glpat-…"))
                     .textFieldStyle(.roundedBorder)
-                Text("The token needs the `read_api` scope. It is stored in the macOS Keychain.")
+                Text("Use a token with the `api` scope (needed for retry/cancel and the Token tab; `read_api` is read-only and won't allow those). It is stored in the macOS Keychain.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {

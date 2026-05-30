@@ -67,6 +67,12 @@ final class AppSettings: ObservableObject {
         didSet { persistSnippets() }
     }
 
+    /// Tokens minted via the Token tab, kept (secret, in Keychain) so the user
+    /// can copy them until they expire. The janitor prunes expired entries.
+    @Published var generatedTokens: [GeneratedTokenRecord] = [] {
+        didSet { persistGeneratedTokens() }
+    }
+
     /// Token mirror — UI binds to this, persistence is keychain-backed.
     @Published var token: String = "" {
         didSet {
@@ -100,6 +106,11 @@ final class AppSettings: ObservableObject {
             if let t = KeychainHelper.loadToken(serverID: s.id) { tokens[s.id] = t }
         }
         self._serverTokens = Published(initialValue: tokens)
+        if let json = KeychainHelper.loadSecret(account: AppConstants.keychainGeneratedTokens),
+           let data = json.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([GeneratedTokenRecord].self, from: data) {
+            self._generatedTokens = Published(initialValue: decoded)
+        }
     }
 
     /// Returns a configured API client for the **legacy single-server** config.
@@ -191,5 +202,25 @@ final class AppSettings: ObservableObject {
     private func persistSnippets() {
         guard let data = try? JSONEncoder().encode(snippets) else { return }
         UserDefaults.standard.set(data, forKey: AppConstants.DefaultsKey.snippetsJSON)
+    }
+
+    // MARK: - Generated tokens
+
+    func addGeneratedToken(_ record: GeneratedTokenRecord) {
+        generatedTokens.append(record)
+    }
+
+    func removeGeneratedToken(id: UUID) {
+        generatedTokens.removeAll { $0.id == id }
+    }
+
+    private func persistGeneratedTokens() {
+        guard let data = try? JSONEncoder().encode(generatedTokens),
+              let json = String(data: data, encoding: .utf8) else { return }
+        do {
+            try KeychainHelper.saveSecret(json, account: AppConstants.keychainGeneratedTokens)
+        } catch {
+            AppLogger.settings.error("keychain save (generated tokens) failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

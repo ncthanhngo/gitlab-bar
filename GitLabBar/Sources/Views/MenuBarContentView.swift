@@ -12,6 +12,7 @@ struct MenuBarContentView: View {
     enum PopoverTab: String, CaseIterable, Identifiable {
         case pipelines = "Pipelines"
         case mrs = "MRs"
+        case token = "Token"
         var id: String { rawValue }
     }
 
@@ -91,6 +92,10 @@ struct MenuBarContentView: View {
             MRListView()
                 .environmentObject(mrMonitor)
                 .environmentObject(settings)
+        case .token:
+            TokenGeneratorView()
+                .environmentObject(settings)
+                .frame(maxHeight: 460)
         }
     }
 
