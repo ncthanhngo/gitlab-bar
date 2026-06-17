@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Popover tab that mints short-lived read-only **Group Access Tokens** to copy
+/// Popover tab that mints short-lived full-access **Group Access Tokens** to copy
 /// for use elsewhere. Generated tokens persist (encrypted, via the Keychain on
 /// `AppSettings`) and stay listed with a live countdown until they expire — at
 /// which point `GeneratedTokenJanitor` revokes them server-side and removes

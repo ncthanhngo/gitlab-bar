@@ -40,9 +40,10 @@ enum AppConstants {
 
     /// Defaults for the on-demand Group Access Token generator (Token tab).
     enum TokenGenerator {
-        static let scope       = "read_api"
-        /// Reporter — enough for read-only API browsing, least-privilege.
-        static let accessLevel = 20
+        /// Full read/write API access.
+        static let scope       = "api"
+        /// Owner — full permissions on the group.
+        static let accessLevel = 50
         /// How often the janitor checks for tokens to revoke/purge.
         static let janitorIntervalSecs: TimeInterval = 60
         /// "Copied" feedback duration on copy buttons.
