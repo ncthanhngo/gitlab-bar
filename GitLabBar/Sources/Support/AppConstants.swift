@@ -87,6 +87,7 @@ enum AppConstants {
         static let pipelineJobsPath = "/api/v4/projects/%@/pipelines/%d/jobs"
         static let pipelineRetryPath  = "/api/v4/projects/%@/pipelines/%d/retry"
         static let pipelineCancelPath = "/api/v4/projects/%@/pipelines/%d/cancel"
+        static let commitPath       = "/api/v4/projects/%@/repository/commits/%@"
         static let projectPath      = "/api/v4/projects/%@"
         static let projectsListPath = "/api/v4/projects"
         static let userPath         = "/api/v4/user"

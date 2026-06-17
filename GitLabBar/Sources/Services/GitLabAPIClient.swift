@@ -49,6 +49,13 @@ struct GitLabAPIClient: GitLabAPI {
         return try await get(url: url)
     }
 
+    func commit(projectID: String, sha: String) async throws -> GitLabCommit {
+        let encoded = Self.encode(projectID)
+        let path = String(format: AppConstants.API.commitPath, encoded, sha)
+        let url = try makeURL(path: path, query: [])
+        return try await get(url: url)
+    }
+
     func pipelineJobs(projectID: String, pipelineID: Int) async throws -> [PipelineJob] {
         let encoded = Self.encode(projectID)
         let path = String(format: AppConstants.API.pipelineJobsPath, encoded, pipelineID)

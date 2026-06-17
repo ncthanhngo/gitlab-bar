@@ -9,11 +9,17 @@ struct PipelineRowView: View {
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var monitor: PipelineMonitor
+    @EnvironmentObject private var commitCache: CommitCache
 
     @State private var hovering = false
     @State private var showCopied: String?
     @State private var isExpanded = false
     @State private var isPerformingAction = false
+
+    private var commit: GitLabCommit? {
+        guard let sha = entry.pipeline.sha else { return nil }
+        return commitCache.cached(projectID: entry.project.id, sha: sha)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -57,6 +63,13 @@ struct PipelineRowView: View {
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if let title = commit?.title, !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             HStack(spacing: 4) {
                 Text(entry.pipeline.status.displayName)
                     .foregroundStyle(entry.pipeline.status.tint)
@@ -139,6 +152,8 @@ struct PipelineRowView: View {
             Button("Copy short SHA") { copy(.shortSHA) }
             Button("Copy branch @ SHA") { copy(.branchAtSha) }
         }
+        Button("Copy commit title") { copy(.commitTitle) }
+        Button("Copy commit message") { copy(.commitMessage) }
         Button("Copy pipeline URL") { copy(.url) }
         if entry.pipeline.iid != nil {
             Button("Copy IID (#\(entry.pipeline.iid ?? 0))") { copy(.iid) }
@@ -180,6 +195,17 @@ struct PipelineRowView: View {
     private func toggleExpand() {
         withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
         monitor.acknowledgeFailures()
+        if isExpanded { fetchCommitThen(nil) }
+    }
+
+    /// Fetch commit metadata (if not cached) then optionally run a follow-up.
+    private func fetchCommitThen(_ followUp: (() -> Void)?) {
+        guard let sha = entry.pipeline.sha,
+              let client = settings.makeClient(for: entry.project.serverID) else { return }
+        Task { @MainActor in
+            await commitCache.fetchIfNeeded(projectID: entry.project.id, sha: sha, client: client)
+            followUp?()
+        }
     }
 
     // MARK: - Actions
@@ -188,18 +214,27 @@ struct PipelineRowView: View {
         case fullSHA = "full SHA"
         case shortSHA = "short SHA"
         case branchAtSha = "branch@SHA"
+        case commitTitle = "commit title"
+        case commitMessage = "commit message"
         case url = "URL"
         case iid = "IID"
     }
 
     private func copy(_ variant: CopyVariant) {
+        // Commit variants need a cache hit — kick the fetch and retry once it lands.
+        if variant == .commitTitle || variant == .commitMessage, commit == nil {
+            fetchCommitThen { self.copy(variant) }
+            return
+        }
         let value: String?
         switch variant {
-        case .fullSHA:     value = entry.pipeline.sha
-        case .shortSHA:    value = shortSHA
-        case .branchAtSha: value = entry.pipeline.ref.flatMap { ref in shortSHA.map { "\(ref) @ \($0)" } }
-        case .url:         value = entry.pipeline.webUrl
-        case .iid:         value = entry.pipeline.iid.map { "#\($0)" }
+        case .fullSHA:       value = entry.pipeline.sha
+        case .shortSHA:      value = shortSHA
+        case .branchAtSha:   value = entry.pipeline.ref.flatMap { ref in shortSHA.map { "\(ref) @ \($0)" } }
+        case .commitTitle:   value = commit?.title
+        case .commitMessage: value = commit?.message
+        case .url:           value = entry.pipeline.webUrl
+        case .iid:           value = entry.pipeline.iid.map { "#\($0)" }
         }
         guard let v = value, !v.isEmpty else { return }
         let pb = NSPasteboard.general

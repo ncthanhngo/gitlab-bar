@@ -11,6 +11,8 @@ protocol GitLabAPI: Sendable {
     func userProjects(perPage: Int) async throws -> [GitLabProjectInfo]
     /// Jobs of a given pipeline. Used for the in-popover drill-down.
     func pipelineJobs(projectID: String, pipelineID: Int) async throws -> [PipelineJob]
+    /// Commit metadata (title, message, author) for a single SHA.
+    func commit(projectID: String, sha: String) async throws -> GitLabCommit
     /// Retry failed jobs of a pipeline.
     func retryPipeline(projectID: String, pipelineID: Int) async throws
     /// Cancel running jobs of a pipeline.
