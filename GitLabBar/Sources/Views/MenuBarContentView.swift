@@ -148,7 +148,7 @@ struct MenuBarContentView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
         }
-        .frame(maxHeight: 420)
+        .frame(minHeight: 480, maxHeight: 640)
     }
 
     private func projectSectionView(_ section: ProjectSection) -> some View {
