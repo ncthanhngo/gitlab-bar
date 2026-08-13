@@ -285,10 +285,10 @@ struct GitLabAPIClient: GitLabAPI {
         d.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let raw = try container.decode(String.self)
-            if let date = iso8601WithFractionalSeconds.date(from: raw) {
+            if let date = try? iso8601WithFractionalSeconds.parse(raw) {
                 return date
             }
-            if let date = iso8601.date(from: raw) {
+            if let date = try? iso8601.parse(raw) {
                 return date
             }
             throw DecodingError.dataCorruptedError(
@@ -311,14 +311,8 @@ struct GitLabAPIClient: GitLabAPI {
     }()
 }
 
-private let iso8601WithFractionalSeconds: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-}()
+// `Date.ISO8601FormatStyle` is a `Sendable` value type, unlike the reference-type
+// `ISO8601DateFormatter`, so these stay safe to share from the decoder closure.
+private let iso8601WithFractionalSeconds = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
 
-private let iso8601: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime]
-    return f
-}()
+private let iso8601 = Date.ISO8601FormatStyle()
