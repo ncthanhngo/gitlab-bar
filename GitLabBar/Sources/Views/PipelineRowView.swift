@@ -155,9 +155,7 @@ struct PipelineRowView: View {
         Button("Copy commit title") { copy(.commitTitle) }
         Button("Copy commit message") { copy(.commitMessage) }
         Button("Copy pipeline URL") { copy(.url) }
-        if entry.pipeline.iid != nil {
-            Button("Copy IID (#\(entry.pipeline.iid ?? 0))") { copy(.iid) }
-        }
+        Button("Copy pipeline number (#\(entry.pipeline.id))") { copy(.pipelineNumber) }
         Divider()
         Button("Open in browser", action: openInBrowser)
     }
@@ -213,7 +211,7 @@ struct PipelineRowView: View {
         case commitTitle = "commit title"
         case commitMessage = "commit message"
         case url = "URL"
-        case iid = "IID"
+        case pipelineNumber = "pipeline number"
     }
 
     private func copy(_ variant: CopyVariant) {
@@ -230,7 +228,7 @@ struct PipelineRowView: View {
         case .commitTitle:   value = commit?.title
         case .commitMessage: value = commit?.message
         case .url:           value = entry.pipeline.webUrl
-        case .iid:           value = entry.pipeline.iid.map { "#\($0)" }
+        case .pipelineNumber: value = "#\(entry.pipeline.id)"
         }
         guard let v = value, !v.isEmpty else { return }
         let pb = NSPasteboard.general

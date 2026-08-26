@@ -33,9 +33,10 @@ struct PipelineEntry: Identifiable, Hashable, Sendable {
     var id: String { "\(project.id)-\(pipeline.id)" }
 
     /// Human-readable label, e.g. `myorg/web` `feature/login #1234`.
+    /// Uses the global pipeline ID — that is the number GitLab shows in its UI
+    /// and in the pipeline URL, unlike the per-project `iid`.
     var displayLabel: String {
         let branch = pipeline.ref ?? "?"
-        let number = pipeline.iid.map { "#\($0)" } ?? ""
-        return "\(branch) \(number)".trimmingCharacters(in: .whitespaces)
+        return "\(branch) #\(pipeline.id)"
     }
 }

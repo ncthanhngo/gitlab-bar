@@ -95,8 +95,7 @@ struct HistoryView: View {
 
     private func rowTitle(_ r: PipelineHistoryRecord) -> String {
         let branch = r.ref ?? "?"
-        let number = r.iid.map { "#\($0)" } ?? ""
-        return "\(branch) \(number)".trimmingCharacters(in: .whitespaces)
+        return "\(branch) #\(r.pipelineID)"
     }
 
     private func filteredGroups() -> [(projectID: String, projectName: String, records: [PipelineHistoryRecord])] {
