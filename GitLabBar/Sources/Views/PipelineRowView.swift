@@ -167,11 +167,7 @@ struct PipelineRowView: View {
         let base = Image(systemName: entry.pipeline.status.sfSymbol)
             .foregroundStyle(entry.pipeline.status.tint)
             .frame(width: 14)
-        if #available(macOS 14, *) {
-            base.symbolEffect(.pulse, options: .repeating, isActive: entry.pipeline.status.isActive)
-        } else {
-            base
-        }
+        base
     }
 
     private var shortSHA: String? {
