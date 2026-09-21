@@ -13,8 +13,13 @@ struct GitLabAPIClient: GitLabAPI {
     init(baseURL: URL, token: String, session: URLSession? = nil) {
         self.baseURL = baseURL
         self.token = token
-        self.session = session ?? Self.makeSession()
+        self.session = session ?? Self.sharedSession
     }
+
+    /// One session for every client. Clients are rebuilt on each poll, and a
+    /// fresh session per client meant a new TLS handshake every few seconds
+    /// plus sessions that were never invalidated.
+    private static let sharedSession = makeSession()
 
     /// Dedicated session so we don't inherit `URLSession.shared`'s pooled
     /// connections — which can survive nsurlsessiond hangs across app launches.
