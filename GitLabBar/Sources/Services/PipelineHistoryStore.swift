@@ -18,18 +18,35 @@ final class PipelineHistoryStore: ObservableObject {
 
     // MARK: - Public
 
-    /// Insert-or-replace a record by composite ID, keep newest first, enforce cap.
-    func record(_ entry: PipelineEntry) {
-        let record = PipelineHistoryRecord(entry: entry)
-        if let idx = records.firstIndex(where: { $0.id == record.id }) {
-            records[idx] = record
-        } else {
-            records.insert(record, at: 0)
+    /// Upsert one poll's worth of entries, keep newest first, enforce cap.
+    ///
+    /// Runs on every poll (as often as every 5 s), so it publishes and rewrites
+    /// the history file at most once per call, and not at all when no pipeline
+    /// changed since the last poll.
+    func record(_ entries: [PipelineEntry]) {
+        var updated = records
+        var changed = false
+        for entry in entries {
+            let record = PipelineHistoryRecord(entry: entry)
+            if let idx = updated.firstIndex(where: { $0.id == record.id }) {
+                if updated[idx].matchesSnapshot(of: record) { continue }
+                updated[idx] = record
+            } else {
+                updated.append(record)
+            }
+            changed = true
         }
-        records.sort { $0.updatedAt > $1.updatedAt }
-        if records.count > limit {
-            records.removeLast(records.count - limit)
+        guard changed else { return }
+        updated.sort { $0.updatedAt > $1.updatedAt }
+        if updated.count > limit {
+            updated.removeLast(updated.count - limit)
         }
+        // A full history can churn to the same result: pipelines older than
+        // the cap get inserted and trimmed straight away on every poll.
+        let unchanged = updated.count == records.count
+            && zip(updated, records).allSatisfy { $0.matchesSnapshot(of: $1) }
+        guard !unchanged else { return }
+        records = updated
         save()
     }
 

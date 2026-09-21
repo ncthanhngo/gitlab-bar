@@ -29,3 +29,17 @@ struct PipelineHistoryRecord: Codable, Sendable, Identifiable, Hashable {
         self.recordedAt  = now
     }
 }
+
+extension PipelineHistoryRecord {
+    /// True when `other` describes the same pipeline state, ignoring when it
+    /// was recorded. Lets the store skip rewriting unchanged records.
+    func matchesSnapshot(of other: PipelineHistoryRecord) -> Bool {
+        id == other.id
+            && projectName == other.projectName
+            && iid == other.iid
+            && ref == other.ref
+            && status == other.status
+            && webUrl == other.webUrl
+            && updatedAt == other.updatedAt
+    }
+}

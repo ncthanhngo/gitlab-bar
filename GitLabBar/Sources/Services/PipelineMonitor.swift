@@ -89,6 +89,14 @@ final class PipelineMonitor: ObservableObject {
         Task { await self.refresh() }
     }
 
+    /// Refresh unless the last poll is younger than `maxAge`. Called when the
+    /// popover opens so the list is current even between polls.
+    func refreshIfStale(maxAge: TimeInterval = 5) async {
+        if isLoading { return }
+        if let at = lastRefresh, Date().timeIntervalSince(at) < maxAge { return }
+        await refresh()
+    }
+
     /// Manually trigger a refresh.
     func refresh() async {
         let projects = settings.projects
@@ -163,12 +171,15 @@ final class PipelineMonitor: ObservableObject {
         }
         // Detect transitions before overwriting state, then archive every entry.
         emitTransitions(for: collected)
-        for entry in collected { history.record(entry) }
+        history.record(collected)
 
-        self.entries = collected
-        self.lastError = firstError
+        // Assign only on change: every publish re-evaluates the whole
+        // MenuBarExtra scene, and most polls return identical data.
+        if entries != collected { self.entries = collected }
+        if lastError != firstError { self.lastError = firstError }
         self.lastRefresh = Date()
-        self.overall = Self.aggregate(entries: collected)
+        let aggregate = Self.aggregate(entries: collected)
+        if overall != aggregate { self.overall = aggregate }
         self.refreshUnacknowledgedFailure(for: collected, refreshedProjectIDs: refreshedProjectIDs)
     }
 
@@ -194,7 +205,8 @@ final class PipelineMonitor: ObservableObject {
             // Keep if the project wasn't refreshed (gap), else only if still failing.
             !refreshedProjectIDs.contains(key.projectID) || currentFailed.contains(key)
         }
-        hasUnacknowledgedFailure = !currentFailed.isSubset(of: acknowledgedFailedKeys)
+        let unacknowledged = !currentFailed.isSubset(of: acknowledgedFailedKeys)
+        if hasUnacknowledgedFailure != unacknowledged { hasUnacknowledgedFailure = unacknowledged }
     }
 
     private static func failedKeys(in entries: [PipelineEntry]) -> Set<FailureKey> {
