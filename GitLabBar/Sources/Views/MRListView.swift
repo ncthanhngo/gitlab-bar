@@ -9,7 +9,7 @@ struct MRListView: View {
         if settings.makeClient() == nil {
             empty("gear", "Not configured", "Open Settings to enter URL and token.")
         } else if mrMonitor.mine.isEmpty && mrMonitor.reviewRequests.isEmpty {
-            if mrMonitor.lastRefresh == nil {
+            if !mrMonitor.hasLoaded {
                 empty("hourglass", "Loading…", nil)
             } else {
                 empty("checkmark.circle", "Inbox zero", "No open MRs.")

@@ -56,6 +56,9 @@ enum AppConstants {
         static let pollIntervalSecs = 30
         static let perPage          = 10
         static let minPollSeconds   = 5
+        /// Merge requests change slowly and only show in the popover, which
+        /// refreshes them on open.
+        static let mrPollSeconds    = 60
         static let maxPollSeconds   = 600
         static let requestTimeout: TimeInterval = 15
         static let historyLimit     = 500

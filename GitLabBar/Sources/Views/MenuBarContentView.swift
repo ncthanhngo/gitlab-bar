@@ -26,12 +26,22 @@ struct MenuBarContentView: View {
             footer
         }
         .padding(.vertical, 8)
-        .onAppear { monitor.acknowledgeFailures() }
+        .onAppear { popoverOpened() }
         // MenuBarExtra(.window) caches the view across opens, so `.onAppear`
         // only fires the first time. Listen for the popover window becoming
         // key as a robust "user just opened the popover" signal.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            monitor.acknowledgeFailures()
+            popoverOpened()
+        }
+    }
+
+    /// Merge requests poll slowly in the background, so catch up the moment
+    /// the user looks.
+    private func popoverOpened() {
+        monitor.acknowledgeFailures()
+        Task {
+            await monitor.refreshIfStale()
+            await mrMonitor.refreshIfStale()
         }
     }
 

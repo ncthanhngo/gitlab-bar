@@ -1,15 +1,16 @@
 import Foundation
 import Combine
 
-/// Polls authored + review-requested MRs on the same cadence as the
-/// pipeline monitor, exposing two published lists.
+/// Polls authored + review-requested MRs, exposing two published lists.
+/// Polls no faster than `mrPollSeconds`; the popover refreshes on open.
 @MainActor
 final class MRMonitor: ObservableObject {
     @Published private(set) var mine: [MergeRequest] = []
     @Published private(set) var reviewRequests: [MergeRequest] = []
-    @Published private(set) var lastError: String?
-    @Published private(set) var isLoading: Bool = false
-    @Published private(set) var lastRefresh: Date?
+    /// Flips to true after the first fetch so the popover can tell "loading" from "empty".
+    @Published private(set) var hasLoaded = false
+
+    private var lastFetchAt: Date?
 
     private let settings: AppSettings
     private var pollTask: Task<Void, Never>?
@@ -24,7 +25,7 @@ final class MRMonitor: ObservableObject {
             guard let self else { return }
             while !Task.isCancelled {
                 await self.refresh()
-                let secs = max(AppConstants.Default.minPollSeconds, self.settings.pollIntervalSecs)
+                let secs = max(AppConstants.Default.mrPollSeconds, self.settings.pollIntervalSecs)
                 try? await Task.sleep(nanoseconds: UInt64(secs) * 1_000_000_000)
             }
         }
@@ -35,6 +36,13 @@ final class MRMonitor: ObservableObject {
         pollTask = nil
     }
 
+    /// Refresh unless the last fetch is younger than `maxAge`. Called when the
+    /// popover opens, since background polling is deliberately slow.
+    func refreshIfStale(maxAge: TimeInterval = 10) async {
+        if let at = lastFetchAt, Date().timeIntervalSince(at) < maxAge { return }
+        await refresh()
+    }
+
     func refresh() async {
         // Fan out across every configured server (legacy + multi-instance).
         var clients: [GitLabAPI] = []
@@ -43,12 +51,10 @@ final class MRMonitor: ObservableObject {
             if let c = settings.makeClient(for: server.id) { clients.append(c) }
         }
         guard !clients.isEmpty else {
-            mine = []
-            reviewRequests = []
+            if !mine.isEmpty { mine = [] }
+            if !reviewRequests.isEmpty { reviewRequests = [] }
             return
         }
-        isLoading = true
-        defer { isLoading = false }
 
         var allCreated: [MergeRequest] = []
         var allReviewer: [MergeRequest] = []
@@ -65,9 +71,12 @@ final class MRMonitor: ObservableObject {
                 allReviewer.append(contentsOf: pair.reviewer)
             }
         }
-        mine = allCreated
+        // Assign only on change so an unchanged poll doesn't re-render the scene.
+        if mine != allCreated { mine = allCreated }
         let mineIDs = Set(allCreated.map(\.id))
-        reviewRequests = allReviewer.filter { !mineIDs.contains($0.id) }
-        lastRefresh = Date()
+        let reviews = allReviewer.filter { !mineIDs.contains($0.id) }
+        if reviewRequests != reviews { reviewRequests = reviews }
+        lastFetchAt = Date()
+        if !hasLoaded { hasLoaded = true }
     }
 }
