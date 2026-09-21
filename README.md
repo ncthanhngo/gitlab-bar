@@ -35,7 +35,7 @@ click the arrow icon to open the pipeline page in your browser.
 
 ## Requirements
 
-- macOS 13 Ventura or later (macOS 14+ adds a subtle pulse animation while pipelines run)
+- macOS 13 Ventura or later
 - A GitLab Personal Access Token with the `read_api` scope
   ([how to create one](https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html))
 
@@ -97,8 +97,9 @@ First-time setup:
    (`https://gitlab.your-company.com`) and your Personal Access Token.
 3. **Projects** tab — add each project you want to watch. Use either a numeric
    project ID (`123`) or a URL path (`group/subgroup/repo`).
-4. **General** tab — pick a refresh interval (default 30 s), how many
-   pipelines to show per project, toggle banner notifications, and turn on
+4. **General** tab — pick a pipeline refresh interval (default 30 s; merge
+   requests refresh every 60 s at most and whenever you open the popover),
+   how many pipelines to show per project, toggle banner notifications, and turn on
    **Launch at Login** if you want GitLabBar to start with macOS.
 5. Close Settings. The icon updates within one refresh cycle.
 
@@ -144,6 +145,22 @@ xcodebuild -project GitLabBar.xcodeproj \
            build
 open build/Build/Products/Release/GitLabBar.app
 ```
+
+### Stop the repeated keychain password prompt
+
+Ad-hoc builds (Homebrew and the commands above) get a new code hash on every
+build, so macOS asks for your login keychain password again after each
+rebuild or `brew upgrade`. If you have an Apple Development or Developer ID
+certificate, install a certificate-signed copy instead — one **Always Allow**
+then survives every rebuild:
+
+```bash
+scripts/install-signed.sh          # build this checkout, sign, install, relaunch
+scripts/install-signed.sh --brew   # sign and install the app `brew upgrade` built
+```
+
+The script picks the first non-revoked Developer ID Application or Apple
+Development certificate; set `SIGN_ID=<sha1|name>` to choose another.
 
 ---
 
