@@ -31,6 +31,17 @@ enum PipelineStatus: String, Codable, Sendable, CaseIterable {
         }
     }
 
+    /// `true` for states where the pipeline is waiting rather than executing.
+    /// These can sit untouched for days (e.g. no runner picks the job up).
+    var isQueued: Bool {
+        switch self {
+        case .created, .waitingForResource, .pending:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// SF Symbol that visually represents this state.
     var sfSymbol: String {
         switch self {
