@@ -6,12 +6,14 @@ pipelines so you stop refreshing the GitLab tab.
 The menu bar icon changes colour based on the aggregate state of every project
 you watch:
 
-| Icon                 | State                                                          |
-| -------------------- | -------------------------------------------------------------- |
-| `⟳` orange + counter | At least one pipeline is running (counter = number running)    |
-| `✓` green            | Every project's most recent pipeline succeeded                 |
-| `✕` red              | At least one project's most recent pipeline failed             |
-| `◌` grey             | Not configured yet, or no data fetched                         |
+| Icon                         | State                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| orange dotted circle + `ABC` | A pipeline is running or queued (`ABC·N` when N projects are busy)     |
+| red filled circle + `FAIL`   | A pipeline failed and you haven't opened the popover yet               |
+| green dotted circle          | Nothing running and no unseen failures                                 |
+
+`ABC` is a 3-letter tag of the most recently active project. Queued pipelines
+that GitLab hasn't updated for an hour are treated as stuck and ignored.
 
 Click the icon to open a popover with the latest pipelines per project. Each
 row shows the branch, status, short commit SHA, trigger source and duration.
