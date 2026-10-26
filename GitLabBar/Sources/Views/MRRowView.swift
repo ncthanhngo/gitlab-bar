@@ -44,7 +44,7 @@ struct MRRowView: View {
                         }
                         if let updated = mr.updatedAt {
                             Text("·").foregroundStyle(.secondary)
-                            Text(updated, style: .relative).foregroundStyle(.secondary)
+                            RelativeTimeText(date: updated).foregroundStyle(.secondary)
                         }
                     }
                     .font(.system(size: 10))

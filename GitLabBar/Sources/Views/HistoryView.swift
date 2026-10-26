@@ -77,7 +77,7 @@ struct HistoryView: View {
                     HStack(spacing: 6) {
                         Text(record.status.displayName).foregroundStyle(record.status.tint)
                         Text("·").foregroundStyle(.secondary)
-                        Text(record.updatedAt, style: .relative).foregroundStyle(.secondary)
+                        RelativeTimeText(date: record.updatedAt).foregroundStyle(.secondary)
                     }
                     .font(.system(size: 10))
                 }

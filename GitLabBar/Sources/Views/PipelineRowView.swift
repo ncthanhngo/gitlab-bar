@@ -89,7 +89,7 @@ struct PipelineRowView: View {
                 }
                 if let updated = entry.pipeline.updatedAt {
                     Text("·").foregroundStyle(.secondary)
-                    Text(updated, style: .relative)
+                    RelativeTimeText(date: updated)
                         .foregroundStyle(.secondary)
                 }
             }

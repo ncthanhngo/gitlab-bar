@@ -246,7 +246,7 @@ struct MenuBarContentView: View {
             }
             .font(.caption2)
         } else if let when = monitor.lastRefresh {
-            Text("Updated \(when, style: .relative) ago")
+            RelativeTimeText(date: when, prefix: "Updated ")
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
