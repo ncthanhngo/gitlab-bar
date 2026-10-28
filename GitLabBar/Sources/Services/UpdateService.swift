@@ -128,4 +128,35 @@ enum UpdateService {
             return output
         }.value
     }
+
+    /// For signed /Applications installs: build the release tarball with its own
+    /// `scripts/install-signed.sh`, which quits this app, swaps the bundle and
+    /// relaunches it. Output goes to a log file, not a pipe, because the script
+    /// outlives us and would die of SIGPIPE writing to a closed pipe.
+    static func runSourceInstall(tag: String) async throws {
+        let log = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/GitLabBar-update.log")
+        let tarball = "https://github.com/\(owner)/\(repo)/archive/refs/tags/\(tag).tar.gz"
+        let script = """
+            set -e
+            src="$(mktemp -d)"
+            curl -fsSL '\(tarball)' | tar -xz -C "$src" --strip-components=1
+            bash "$src/scripts/install-signed.sh"
+            """
+        try await Task.detached(priority: .userInitiated) { () throws -> Void in
+            FileManager.default.createFile(atPath: log.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: log)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-l", "-c", script]
+            process.standardOutput = handle
+            process.standardError = handle
+            try process.run()
+            process.waitUntilExit()
+            // Reaching here means the script failed before it could quit us.
+            let output = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+            let tail = output.split(separator: "\n").suffix(3).joined(separator: "\n")
+            throw UpdateError.brewFailed(tail.isEmpty ? "Update exited with code \(process.terminationStatus)" : tail)
+        }.value
+    }
 }

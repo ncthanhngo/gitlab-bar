@@ -30,6 +30,8 @@ click the arrow icon to open the pipeline page in your browser.
 - Optional banner notifications when a pipeline transitions to failed / success
 - Dedicated **History** window with search and persistent pipeline records
 - Optional **Launch at Login** toggle (via `SMAppService`)
+- **One-click update** from the popover header when a new release is out
+  (brew upgrade, or signed rebuild for `/Applications` installs), then auto-relaunch
 - No dependencies, no analytics, no network calls besides your GitLab instance
 - Single binary, < 1 MB on disk
 

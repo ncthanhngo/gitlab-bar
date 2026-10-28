@@ -6,6 +6,7 @@ struct MenuBarContentView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var monitor: PipelineMonitor
     @EnvironmentObject private var mrMonitor: MRMonitor
+    @EnvironmentObject private var updateChecker: UpdateChecker
     @State private var showSnippets = false
     @State private var tab: PopoverTab = .pipelines
 
@@ -42,6 +43,7 @@ struct MenuBarContentView: View {
         Task {
             await monitor.refreshIfStale()
             await mrMonitor.refreshIfStale()
+            await updateChecker.checkIfStale()
         }
     }
 
@@ -70,6 +72,7 @@ struct MenuBarContentView: View {
             }
             Spacer()
             if monitor.isLoading { ProgressView().controlSize(.small) }
+            updateButton
             Button {
                 showSnippets.toggle()
             } label: {
@@ -92,6 +95,33 @@ struct MenuBarContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private var updateButton: some View {
+        if let version = updateChecker.availableVersion {
+            if updateChecker.isInstalling {
+                HStack(spacing: 4) {
+                    ProgressView().controlSize(.small)
+                    Text("Updating…").font(.system(size: 10, weight: .medium))
+                }
+                .foregroundStyle(.secondary)
+                .help("Building v\(version) — GitLabBar relaunches when done")
+            } else {
+                Button {
+                    updateChecker.install()
+                } label: {
+                    Label(updateChecker.lastError == nil ? "v\(version)" : "Retry update",
+                          systemImage: updateChecker.lastError == nil
+                              ? "arrow.down.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(updateChecker.lastError == nil ? Color.accentColor : .orange)
+                .help(updateChecker.lastError ?? "Update to v\(version)")
+            }
+        }
     }
 
     @ViewBuilder

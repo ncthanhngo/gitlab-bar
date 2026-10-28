@@ -8,6 +8,7 @@ struct GitLabBarApp: App {
     @StateObject private var mrMonitor: MRMonitor
     @StateObject private var tokenJanitor: GeneratedTokenJanitor
     @StateObject private var commitCache = CommitCache.shared
+    @StateObject private var updateChecker = UpdateChecker()
     private let webhook = WebhookReceiver()
 
     init() {
@@ -47,6 +48,7 @@ struct GitLabBarApp: App {
                 .environmentObject(monitor)
                 .environmentObject(mrMonitor)
                 .environmentObject(commitCache)
+                .environmentObject(updateChecker)
                 .frame(width: 380)
         } label: {
             MenuBarLabelView(state: menuBarState)
@@ -57,6 +59,7 @@ struct GitLabBarApp: App {
             SettingsView()
                 .environmentObject(settings)
                 .environmentObject(monitor)
+                .environmentObject(updateChecker)
                 .frame(width: 520, height: 520)
         }
         .defaultSize(width: 520, height: 520)

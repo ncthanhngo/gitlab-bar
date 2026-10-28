@@ -4,6 +4,7 @@ import AppKit
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var monitor: PipelineMonitor
+    @EnvironmentObject private var updateChecker: UpdateChecker
 
     @State private var newProjectID: String = ""
     @State private var newProjectName: String = ""
@@ -22,25 +23,18 @@ struct SettingsView: View {
 
     // MARK: - About / Update tab
 
-    @State private var latestRelease: GitHubRelease?
     @State private var updateStatus: String?
     @State private var isCheckingUpdate = false
-    @State private var isInstallingUpdate = false
-    @State private var updateLog: String = ""
 
     private var currentVersion: String { UpdateService.currentVersion }
-
-    private var hasUpdate: Bool {
-        guard let latest = latestRelease else { return false }
-        return UpdateService.isNewer(latest.version, than: currentVersion)
-    }
+    private var hasUpdate: Bool { updateChecker.availableVersion != nil }
 
     private var aboutTab: some View {
         Form {
             Section {
                 LabeledContent("GitLabBar") { Text("v\(currentVersion)").monospacedDigit() }
                 LabeledContent("Installed via") { Text(UpdateService.installLocation.label) }
-                if let latest = latestRelease {
+                if let latest = updateChecker.latestRelease {
                     LabeledContent("Latest release") {
                         HStack(spacing: 6) {
                             Text("v\(latest.version)").monospacedDigit()
@@ -57,36 +51,29 @@ struct SettingsView: View {
                     Button(isCheckingUpdate ? "Checking…" : "Check for updates") {
                         Task { await checkForUpdates() }
                     }
-                    .disabled(isCheckingUpdate || isInstallingUpdate)
+                    .disabled(isCheckingUpdate || updateChecker.isInstalling)
 
                     if hasUpdate {
-                        switch UpdateService.installLocation {
-                        case .brew:
-                            Button(isInstallingUpdate ? "Installing…" : "Install update") {
-                                Task { await installUpdate() }
+                        if case .other = UpdateService.installLocation {
+                            Button("Open release page") { updateChecker.install() }
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            Button(updateChecker.isInstalling ? "Installing…" : "Install update") {
+                                updateChecker.install()
                             }
-                            .disabled(isInstallingUpdate)
-                            .buttonStyle(.borderedProminent)
-                        default:
-                            Button("Open release page") {
-                                NSWorkspace.shared.open(UpdateService.releasesURL)
-                            }
+                            .disabled(updateChecker.isInstalling)
                             .buttonStyle(.borderedProminent)
                         }
                     }
                     Spacer()
                 }
-                if let msg = updateStatus {
+                if let err = updateChecker.lastError {
+                    Text(err)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                } else if let msg = updateStatus {
                     Text(msg).font(.caption).foregroundStyle(.secondary)
-                }
-                if !updateLog.isEmpty {
-                    ScrollView {
-                        Text(updateLog)
-                            .font(.system(size: 10, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
-                    .frame(maxHeight: 140)
                 }
             } header: {
                 Text("Version").font(.headline)
@@ -96,15 +83,15 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task { if latestRelease == nil { await checkForUpdates() } }
+        .task { if updateChecker.latestRelease == nil { await checkForUpdates() } }
     }
 
     private var installFooter: String {
         switch UpdateService.installLocation {
         case .brew:
-            return "Updates run `brew update && brew upgrade gitlab-bar`. Restart GitLabBar after install."
+            return "Updates run `brew update && brew upgrade gitlab-bar`, then GitLabBar relaunches."
         case .applications:
-            return "Installed in /Applications. Auto-install via Sparkle is planned; meanwhile download the latest DMG from the release page."
+            return "Updates rebuild the release with scripts/install-signed.sh (needs Xcode, xcodegen and a signing certificate), then GitLabBar relaunches. Log: ~/Library/Logs/GitLabBar-update.log"
         case .other:
             return "Running from a custom location. Download the latest from the release page to update."
         }
@@ -115,28 +102,9 @@ struct SettingsView: View {
         updateStatus = nil
         defer { isCheckingUpdate = false }
         do {
-            let release = try await UpdateService.fetchLatestRelease()
-            latestRelease = release
-            updateStatus = UpdateService.isNewer(release.version, than: currentVersion)
-                ? "New version v\(release.version) is available."
-                : "You're on the latest version."
-        } catch {
-            updateStatus = error.localizedDescription
-        }
-    }
-
-    private func installUpdate() async {
-        isInstallingUpdate = true
-        updateStatus = "Running brew upgrade…"
-        updateLog = ""
-        defer { isInstallingUpdate = false }
-        do {
-            let output = try await UpdateService.runBrewUpgrade()
-            updateLog = output
-            updateStatus = "Update complete. Quit and relaunch GitLabBar to load v\(latestRelease?.version ?? "new")."
-        } catch let UpdateError.brewFailed(msg) {
-            updateLog = msg
-            updateStatus = "Update failed. See log below."
+            try await updateChecker.check()
+            updateStatus = updateChecker.availableVersion.map { "New version v\($0) is available." }
+                ?? "You're on the latest version."
         } catch {
             updateStatus = error.localizedDescription
         }
