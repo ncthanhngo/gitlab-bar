@@ -2,8 +2,9 @@ import SwiftUI
 import AppKit
 
 /// A single pipeline row: status icon + branch + metadata.
-/// Click row → copy full commit SHA. Hover reveals retry/cancel + open in browser.
-/// Right-click for full multi-copy menu. Chevron expands inline job list.
+/// Click row → copy short commit SHA. Hover reveals retry/cancel + open in browser.
+/// Right-click for full multi-copy menu. Chevron expands inline job list;
+/// failed pipelines auto-expand and collapse again once they turn green.
 struct PipelineRowView: View {
     let entry: PipelineEntry
 
@@ -13,8 +14,13 @@ struct PipelineRowView: View {
 
     @State private var hovering = false
     @State private var showCopied: String?
-    @State private var isExpanded = false
+    @State private var isExpanded: Bool
     @State private var isPerformingAction = false
+
+    init(entry: PipelineEntry) {
+        self.entry = entry
+        _isExpanded = State(initialValue: entry.pipeline.status == .failed)
+    }
 
     private var commit: GitLabCommit? {
         guard let sha = entry.pipeline.sha else { return nil }
@@ -32,28 +38,36 @@ struct PipelineRowView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .onChange(of: entry.pipeline.status) { status in
+            guard status == .failed || status == .success else { return }
+            withAnimation(.easeInOut(duration: 0.15)) { isExpanded = status == .failed }
+        }
     }
 
+    // Chevron sits outside the copy button: a button nested in a button
+    // loses clicks to the outer one, which made expand feel unresponsive.
     private var mainRow: some View {
-        Button(action: { copy(.fullSHA) }) {
-            HStack(spacing: 8) {
-                expandChevron
-                statusIcon
-                rowText
-                Spacer()
-                trailingControls
+        HStack(spacing: 0) {
+            expandChevron
+            Button(action: { copy(.shortSHA) }) {
+                HStack(spacing: 8) {
+                    statusIcon
+                    rowText
+                    Spacer()
+                    trailingControls
+                }
+                .padding(.trailing, 8)
+                .padding(.vertical, 5)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(hovering ? Color.gray.opacity(0.15) : Color.clear)
-            )
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help(shortSHA.map { "Click to copy commit SHA: \($0)" } ?? "No commit SHA")
         }
-        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(hovering ? Color.gray.opacity(0.15) : Color.clear)
+        )
         .onHover { hovering = $0 }
-        .help(entry.pipeline.sha.map { "Click to copy commit SHA: \($0)" } ?? "No commit SHA")
         .contextMenu { copyMenu }
     }
 
@@ -104,7 +118,9 @@ struct PipelineRowView: View {
             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 10)
+                .frame(width: 26)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(isExpanded ? "Hide jobs" : "Show jobs")
